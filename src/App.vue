@@ -4,7 +4,10 @@ import { subscribeToRepoChanges } from './lib/backend';
 import { useRepoStore } from './stores/repoStore';
 import AddScanPathModal from './components/AddScanPathModal.vue';
 import GroupEditorModal from './components/GroupEditorModal.vue';
+import GuidanceBanner from './components/GuidanceBanner.vue';
+import HelpModal from './components/HelpModal.vue';
 import RepoTable from './components/RepoTable.vue';
+import SaveChangesModal from './components/SaveChangesModal.vue';
 import Sidebar from './components/Sidebar.vue';
 import ToastStack from './components/ToastStack.vue';
 import Toolbar from './components/Toolbar.vue';
@@ -35,11 +38,14 @@ onUnmounted(() => {
     <Sidebar />
     <div class="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       <Toolbar />
+      <GuidanceBanner />
       <RepoTable />
     </div>
 
     <GroupEditorModal />
     <AddScanPathModal />
+    <SaveChangesModal />
+    <HelpModal />
     <ToastStack />
   </div>
 </template>

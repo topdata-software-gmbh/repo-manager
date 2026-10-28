@@ -1,6 +1,7 @@
 import type {
   AppConfig,
   BranchInfo,
+  FileChange,
   OperationResult,
   RepoGroup,
   Repository,
@@ -141,6 +142,26 @@ export const backend = {
       'POST',
       '/api/repositories/refresh',
       { path, groupIds },
+    );
+  },
+
+  listRepoChanges(path: string): Promise<FileChange[]> {
+    return request<FileChange[]>(
+      'list_repo_changes',
+      { path },
+      'POST',
+      '/api/repositories/changes',
+      { path },
+    );
+  },
+
+  commitRepoChanges(path: string, message: string): Promise<OperationResult> {
+    return request<OperationResult>(
+      'commit_repo_changes',
+      { path, message },
+      'POST',
+      '/api/repositories/commit',
+      { path, message },
     );
   },
 

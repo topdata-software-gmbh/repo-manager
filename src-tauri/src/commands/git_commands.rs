@@ -1,5 +1,5 @@
 use crate::config::ConfigManager;
-use crate::models::{BranchInfo, OperationResult, Repository};
+use crate::models::{BranchInfo, FileChange, OperationResult, Repository};
 use crate::service;
 use crate::watcher::WatcherState;
 use tauri::State;
@@ -26,6 +26,16 @@ pub async fn refresh_repository(
     group_ids: Vec<String>,
 ) -> Result<Repository, String> {
     Ok(service::refresh_repository(path, group_ids).await)
+}
+
+#[tauri::command]
+pub async fn list_repo_changes(path: String) -> Result<Vec<FileChange>, String> {
+    Ok(service::list_repo_changes(path).await)
+}
+
+#[tauri::command]
+pub async fn commit_repo_changes(path: String, message: String) -> Result<OperationResult, String> {
+    Ok(service::commit_repo_changes(path, message).await)
 }
 
 #[tauri::command]

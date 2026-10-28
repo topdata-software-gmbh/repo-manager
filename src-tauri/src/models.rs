@@ -86,3 +86,10 @@ pub struct BranchInfo {
     pub name: String,
     pub repo_count: usize,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileChange {
+    pub path: String,
+    pub status: String,
+}

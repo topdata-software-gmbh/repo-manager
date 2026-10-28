@@ -93,6 +93,8 @@ fn run_desktop(cli: Cli) {
             delete_repo_group,
             discover_repositories,
             refresh_repository,
+            list_repo_changes,
+            commit_repo_changes,
             execute_group_action,
             switch_group_branch,
             list_group_branches

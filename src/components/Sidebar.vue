@@ -22,7 +22,13 @@ function repoCount(group: RepoGroup): number {
 }
 
 async function removeScanPath(id: string, path: string): Promise<void> {
-  if (!window.confirm(`Stop scanning "${path}"? Repositories stay on disk.`)) return;
+  if (
+    !window.confirm(
+      `Stop looking for projects in "${path}"? Your projects and files stay exactly where they are.`,
+    )
+  ) {
+    return;
+  }
   await store.removeScanPath(id);
 }
 </script>
@@ -36,7 +42,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         </div>
         <div class="min-w-0">
           <p class="truncate text-sm font-bold tracking-wide text-slate-100">Git Repo Manager</p>
-          <p class="text-[10px] uppercase tracking-widest text-slate-500">multi-repo control</p>
+          <p class="text-[10px] uppercase tracking-widest text-slate-500">your project workspace</p>
         </div>
       </div>
 
@@ -52,7 +58,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         >
           <span class="flex items-center gap-2">
             <Layers class="h-3.5 w-3.5" />
-            <span>All Repositories</span>
+            <span>All projects</span>
           </span>
           <span class="font-mono text-[10px] text-slate-500">{{ store.repositories.length }}</span>
         </button>
@@ -60,18 +66,18 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         <div
           class="flex items-center justify-between px-2.5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500"
         >
-          <span>Groups</span>
+          <span>Project groups</span>
           <button
             class="rounded p-0.5 transition-colors hover:bg-slate-800 hover:text-slate-200"
-            title="New group"
+            title="New project group"
             @click="store.openGroupEditor(null)"
           >
             <Plus class="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <p v-if="store.config.groups.length === 0" class="px-2.5 py-1 text-[11px] text-slate-600">
-          No groups yet.
+        <p v-if="store.config.groups.length === 0" class="px-2.5 py-1 text-[11px] leading-relaxed text-slate-600">
+          Groups let you save or update several projects at once.
         </p>
 
         <div
@@ -102,7 +108,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
           </button>
           <button
             class="rounded p-1 text-slate-600 opacity-0 transition-all hover:bg-slate-700 hover:text-slate-200 group-hover:opacity-100"
-            title="Edit group"
+            title="Edit project group"
             @click.stop="store.openGroupEditor(group)"
           >
             <Pencil class="h-3 w-3" />
@@ -112,10 +118,10 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         <div
           class="flex items-center justify-between px-2.5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-500"
         >
-          <span>Scan Paths</span>
+          <span>Project folders</span>
           <button
             class="rounded p-0.5 transition-colors hover:bg-slate-800 hover:text-slate-200"
-            title="Add scan path"
+            title="Add project folder"
             @click="store.openAddScanPath"
           >
             <Plus class="h-3.5 w-3.5" />
@@ -126,7 +132,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
           v-if="store.config.scanPaths.length === 0"
           class="px-2.5 py-1 text-[11px] leading-relaxed text-slate-600"
         >
-          Add a directory to discover repositories.
+          Add the folder where your projects live. We will find the Git projects inside it.
         </p>
 
         <div
@@ -137,7 +143,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
           <button
             class="rounded p-0.5 transition-colors hover:bg-slate-800"
             :class="scanPath.enabled ? 'text-cyan-500' : 'text-slate-600'"
-            :title="scanPath.enabled ? 'Disable scan path' : 'Enable scan path'"
+            :title="scanPath.enabled ? 'Stop looking in this folder' : 'Look in this folder again'"
             @click="store.toggleScanPath(scanPath)"
           >
             <Eye v-if="scanPath.enabled" class="h-3.5 w-3.5" />
@@ -152,7 +158,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
           </span>
           <button
             class="rounded p-0.5 text-slate-600 opacity-0 transition-all hover:bg-slate-800 hover:text-rose-400 group-hover:opacity-100"
-            title="Remove scan path"
+            title="Remove this folder from the list"
             @click="removeScanPath(scanPath.id, scanPath.path)"
           >
             <X class="h-3 w-3" />
@@ -169,17 +175,17 @@ async function removeScanPath(id: string, path: string): Promise<void> {
       >
         <Loader2 v-if="store.isScanning" class="h-3.5 w-3.5 animate-spin" />
         <RefreshCw v-else class="h-3.5 w-3.5" />
-        <span>Rescan configured paths</span>
+        <span>Look for new projects</span>
       </button>
       <button
         class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-900 hover:text-slate-300"
         @click="store.openAddScanPath"
       >
         <FolderSearch class="h-3 w-3" />
-        <span>Add scan path</span>
+        <span>Add project folder</span>
       </button>
       <p class="mt-2 text-center text-[10px] uppercase tracking-widest text-slate-700">
-        {{ backendMode === 'web' ? 'Web server mode' : 'Desktop app' }}
+        {{ backendMode === 'web' ? 'Web browser version' : 'Desktop app' }}
       </p>
     </div>
   </aside>

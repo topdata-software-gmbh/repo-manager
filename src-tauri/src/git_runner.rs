@@ -1,4 +1,4 @@
-use crate::models::{GitRepoState, OperationResult, RemoteInfo};
+use crate::models::{FileChange, GitRepoState, OperationResult, RemoteInfo};
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use tokio::process::Command;
@@ -212,6 +212,59 @@ impl GitRunner {
         .unwrap_or_default()
     }
 
+    pub async fn list_changes(repo_path: &Path) -> Vec<FileChange> {
+        match Self::run_git_cmd(
+            repo_path,
+            &["status", "--porcelain=v1", "--untracked-files=all"],
+        )
+        .await
+        {
+            Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(parse_file_change)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub async fn commit_changes(repo_path: &Path, message: &str) -> OperationResult {
+        let message = message.trim();
+        if message.is_empty() {
+            return failure_result(
+                repo_path,
+                "Write a short message that describes what you changed.",
+                String::new(),
+            );
+        }
+
+        let changes = Self::list_changes(repo_path).await;
+        if changes.is_empty() {
+            return failure_result(repo_path, "There are no changes to save.", String::new());
+        }
+        if changes.iter().any(|change| change.status == "conflict") {
+            return failure_result(
+                repo_path,
+                "Some files have conflicts. Open the project in your editor, fix the marked \
+                 files, then save to Git again.",
+                String::new(),
+            );
+        }
+
+        match Self::run_git_cmd(repo_path, &["add", "-A"]).await {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                return failure_result(
+                    repo_path,
+                    friendly_error(&error_text(&output)),
+                    output_text(&output),
+                )
+            }
+            Err(error) => return failure_result(repo_path, error, String::new()),
+        }
+
+        Self::run_operation(repo_path, &["commit", "-m", message]).await
+    }
+
     pub async fn checkout_branch(
         repo_path: &Path,
         branch: &str,
@@ -230,59 +283,40 @@ impl GitRunner {
         let mut stash_created = false;
 
         if auto_stash {
-            if let Ok(out) =
-                Self::run_git_cmd(repo_path, &["stash", "push", "-m", AUTOSTASH_MESSAGE]).await
-            {
-                let mut text = String::from_utf8_lossy(&out.stdout).to_string();
-                text.push_str(&String::from_utf8_lossy(&out.stderr));
-                stash_created = text.contains("Saved working directory") || text.contains("WIP on");
+            match Self::stash_if_needed(repo_path).await {
+                Ok(created) => stash_created = created,
+                Err(message) => {
+                    return failure_result(repo_path, message, String::new());
+                }
             }
         }
 
-        let mut result = match Self::run_git_cmd(repo_path, &["checkout", branch]).await {
-            Ok(output) if output.status.success() => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: true,
-                output: String::from_utf8_lossy(&output.stdout).to_string(),
-                error: None,
-            },
-            Ok(output) => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: false,
-                output: String::from_utf8_lossy(&output.stdout).to_string(),
-                error: Some(String::from_utf8_lossy(&output.stderr).to_string()),
-            },
-            Err(e) => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: false,
-                output: String::new(),
-                error: Some(e),
-            },
-        };
+        let mut result = Self::run_operation(repo_path, &["checkout", branch]).await;
 
         if stash_created {
-            let restore = Self::run_git_cmd(repo_path, &["stash", "pop"]).await;
-            let restored = matches!(&restore, Ok(out) if out.status.success());
+            let restored = Self::restore_stash(repo_path).await;
 
             if result.success {
                 if restored {
                     result
                         .output
-                        .push_str("\nLocal changes were restored from the autostash.");
+                        .push_str("\nYour changes were put back in the project folder.");
                 } else {
                     result.success = false;
                     result.error = Some(
-                        "Branch switched, but restoring the autostash failed. \
-                         The changes remain in `git stash list`."
+                        "The branch was switched, but your changes could not be put back \
+                         automatically. They are safe in the stash; use 'Bring back set-aside \
+                         changes' to restore them."
                             .to_string(),
                     );
                 }
             } else if let Some(error) = result.error.as_mut() {
                 if restored {
-                    error.push_str("\nLocal changes were restored from the autostash.");
+                    error.push_str("\nYour changes were put back in the project folder.");
                 } else {
                     error.push_str(
-                        "\nLocal changes are still saved in the autostash (`git stash list`).",
+                        "\nYour changes are still saved in the stash. Use 'Bring back \
+                         set-aside changes' to restore them.",
                     );
                 }
             }
@@ -291,43 +325,243 @@ impl GitRunner {
         result
     }
 
-    pub async fn execute_action(repo_path: &Path, action: &str) -> OperationResult {
-        let args: Vec<&str> = match action {
-            "fetch" => vec!["fetch", "--all", "--prune"],
-            "pull" => vec!["pull", "--ff-only"],
-            "push" => vec!["push"],
-            "stash" => vec!["stash", "push"],
-            "stash_pop" => vec!["stash", "pop"],
-            _ => {
-                return OperationResult {
-                    repo_path: repo_path.to_string_lossy().to_string(),
-                    success: false,
-                    output: String::new(),
-                    error: Some(format!("Unknown action: {}", action)),
-                }
-            }
-        };
+    async fn stash_if_needed(repo_path: &Path) -> Result<bool, String> {
+        let status = Self::run_git_cmd(repo_path, &["status", "--porcelain=v1"]).await?;
+        if !status.status.success() {
+            return Err(friendly_error(&error_text(&status)));
+        }
+        if String::from_utf8_lossy(&status.stdout).trim().is_empty() {
+            return Ok(false);
+        }
 
-        match Self::run_git_cmd(repo_path, &args).await {
-            Ok(out) if out.status.success() => OperationResult {
+        let stash =
+            Self::run_git_cmd(repo_path, &["stash", "push", "-u", "-m", AUTOSTASH_MESSAGE]).await?;
+        if !stash.status.success() {
+            return Err(friendly_error(&error_text(&stash)));
+        }
+
+        let text = output_text(&stash);
+        Ok(text.contains("Saved working directory") || text.contains("WIP on"))
+    }
+
+    async fn restore_stash(repo_path: &Path) -> bool {
+        matches!(
+            Self::run_git_cmd(repo_path, &["stash", "pop"]).await,
+            Ok(output) if output.status.success()
+        )
+    }
+
+    async fn run_operation(repo_path: &Path, args: &[&str]) -> OperationResult {
+        match Self::run_git_cmd(repo_path, args).await {
+            Ok(output) if output.status.success() => OperationResult {
                 repo_path: repo_path.to_string_lossy().to_string(),
                 success: true,
-                output: String::from_utf8_lossy(&out.stdout).to_string(),
+                output: output_text(&output),
                 error: None,
             },
-            Ok(out) => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: false,
-                output: String::from_utf8_lossy(&out.stdout).to_string(),
-                error: Some(String::from_utf8_lossy(&out.stderr).to_string()),
-            },
-            Err(e) => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: false,
-                output: String::new(),
-                error: Some(e),
-            },
+            Ok(output) => failure_result(
+                repo_path,
+                friendly_error(&error_text(&output)),
+                output_text(&output),
+            ),
+            Err(error) => failure_result(repo_path, error, String::new()),
         }
+    }
+
+    async fn pull_with_autostash(repo_path: &Path) -> OperationResult {
+        let stash_created = match Self::stash_if_needed(repo_path).await {
+            Ok(created) => created,
+            Err(message) => return failure_result(repo_path, message, String::new()),
+        };
+
+        let mut result = Self::run_operation(repo_path, &["pull", "--ff-only"]).await;
+
+        if stash_created {
+            let restored = Self::restore_stash(repo_path).await;
+
+            if result.success {
+                if restored {
+                    result
+                        .output
+                        .push_str("\nYour changes were put back in the project folder.");
+                } else {
+                    result.success = false;
+                    result.error = Some(
+                        "The latest changes arrived, but your local changes could not be put \
+                         back automatically. They are safe in the stash; use 'Bring back \
+                         set-aside changes' to restore them."
+                            .to_string(),
+                    );
+                }
+            } else if let Some(error) = result.error.as_mut() {
+                if restored {
+                    error.push_str("\nYour changes were put back in the project folder.");
+                } else {
+                    error.push_str(
+                        "\nYour changes are still saved in the stash. Use 'Bring back \
+                         set-aside changes' to restore them.",
+                    );
+                }
+            }
+        }
+
+        result
+    }
+
+    async fn push_branch(repo_path: &Path) -> OperationResult {
+        let branch = Self::get_current_branch(repo_path).await;
+        if branch == "HEAD" || branch.is_empty() {
+            return failure_result(
+                repo_path,
+                "You are not on a branch. Switch to a branch before sending changes.",
+                String::new(),
+            );
+        }
+
+        let has_upstream = Self::run_git_stdout(
+            repo_path,
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        )
+        .await
+        .is_some();
+
+        if has_upstream {
+            Self::run_operation(repo_path, &["push"]).await
+        } else {
+            Self::run_operation(repo_path, &["push", "-u", "origin", &branch]).await
+        }
+    }
+
+    pub async fn execute_action(repo_path: &Path, action: &str) -> OperationResult {
+        match action {
+            "fetch" => Self::run_operation(repo_path, &["fetch", "--all", "--prune"]).await,
+            "pull" => Self::pull_with_autostash(repo_path).await,
+            "push" => Self::push_branch(repo_path).await,
+            "stash" => Self::run_operation(repo_path, &["stash", "push", "-u"]).await,
+            "stash_pop" => Self::run_operation(repo_path, &["stash", "pop"]).await,
+            _ => failure_result(
+                repo_path,
+                format!("Unknown action: {action}"),
+                String::new(),
+            ),
+        }
+    }
+}
+
+fn parse_file_change(line: &str) -> Option<FileChange> {
+    if line.len() < 4 {
+        return None;
+    }
+
+    let code = &line[..2];
+    let raw_path = line[3..].trim();
+    let path = raw_path
+        .rsplit(" -> ")
+        .next()
+        .unwrap_or(raw_path)
+        .trim_matches('"')
+        .to_string();
+
+    if path.is_empty() {
+        return None;
+    }
+
+    let status = if code.contains('U') || code == "AA" || code == "DD" {
+        "conflict"
+    } else if code == "??" || code.contains('A') {
+        "new"
+    } else if code.contains('R') {
+        "renamed"
+    } else if code.contains('D') {
+        "deleted"
+    } else {
+        "modified"
+    };
+
+    Some(FileChange {
+        path,
+        status: status.to_string(),
+    })
+}
+
+fn output_text(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    }
+}
+
+fn error_text(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        output_text(output)
+    } else {
+        stderr
+    }
+}
+
+fn failure_result(repo_path: &Path, error: impl Into<String>, output: String) -> OperationResult {
+    OperationResult {
+        repo_path: repo_path.to_string_lossy().to_string(),
+        success: false,
+        output,
+        error: Some(error.into()),
+    }
+}
+
+fn friendly_error(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+
+    let hint = if lower.contains("permission denied (publickey)")
+        || lower.contains("authentication failed")
+        || lower.contains("could not read username")
+        || lower.contains("terminal prompts disabled")
+    {
+        Some("Git could not sign in to the server. Check your SSH key or Git credentials.")
+    } else if lower.contains("non-fast-forward")
+        || lower.contains("fetch first")
+        || lower.contains("updates were rejected")
+    {
+        Some("There are new changes on the server. Click 'Get latest' first, then send your changes again.")
+    } else if lower.contains("would be overwritten")
+        || lower.contains("please commit your changes or stash")
+    {
+        Some("You have changes that are not saved to Git. Save them first, then try again.")
+    } else if lower.contains("automatic merge failed")
+        || lower.contains("fix conflicts")
+        || lower.contains("unmerged")
+    {
+        Some("Some files have conflicts. Open the project in your editor, fix the marked files, then save to Git.")
+    } else if lower.contains("unable to auto-detect email")
+        || lower.contains("please tell me who you are")
+    {
+        Some("Git does not know your name and email yet. Set them in your Git settings, then try again.")
+    } else if lower.contains("nothing to commit") || lower.contains("no changes added to commit") {
+        Some("There are no changes to save.")
+    } else if lower.contains("not a git repository") {
+        Some("This folder is no longer a Git project.")
+    } else if lower.contains("does not appear to be a git repository")
+        || lower.contains("no such remote")
+        || lower.contains("no configured push destination")
+    {
+        Some("This project is not connected to a remote server yet.")
+    } else {
+        None
+    };
+
+    match hint {
+        Some(hint) => format!("{hint}\n\nTechnical details: {}", raw.trim()),
+        None => raw.trim().to_string(),
     }
 }
 
@@ -401,6 +635,81 @@ mod tests {
         assert!(String::from_utf8_lossy(&stash_list.stdout)
             .trim()
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn lists_and_commits_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        init_repository(&repo);
+
+        fs::write(repo.join("tracked.txt"), "changed\n").unwrap();
+        fs::write(repo.join("new.txt"), "new\n").unwrap();
+
+        let changes = GitRunner::list_changes(&repo).await;
+        assert!(changes
+            .iter()
+            .any(|change| change.path == "tracked.txt" && change.status == "modified"));
+        assert!(changes
+            .iter()
+            .any(|change| change.path == "new.txt" && change.status == "new"));
+
+        let result = GitRunner::commit_changes(&repo, "update theme header").await;
+        assert!(result.success, "{:?}", result.error);
+
+        let state = GitRunner::get_repo_state(&repo).await;
+        assert!(state.is_clean);
+        assert_eq!(state.head_commit_message, "update theme header");
+
+        let empty = GitRunner::commit_changes(&repo, "nothing").await;
+        assert!(!empty.success);
+        assert!(empty.error.unwrap().contains("no changes"));
+    }
+
+    #[tokio::test]
+    async fn refuses_to_commit_unresolved_conflicts() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        init_repository(&repo);
+
+        run_git(&repo, &["checkout", "-b", "feature"]);
+        fs::write(repo.join("tracked.txt"), "feature\n").unwrap();
+        run_git(&repo, &["add", "."]);
+        run_git(
+            &repo,
+            &["-c", "commit.gpgsign=false", "commit", "-m", "feature"],
+        );
+
+        run_git(&repo, &["checkout", "main"]);
+        fs::write(repo.join("tracked.txt"), "main\n").unwrap();
+        run_git(&repo, &["add", "."]);
+        run_git(
+            &repo,
+            &["-c", "commit.gpgsign=false", "commit", "-m", "main"],
+        );
+
+        let merge = StdCommand::new("git")
+            .current_dir(&repo)
+            .args(["merge", "feature"])
+            .status()
+            .unwrap();
+        assert!(!merge.success());
+
+        let changes = GitRunner::list_changes(&repo).await;
+        assert!(changes.iter().any(|change| change.status == "conflict"));
+
+        let result = GitRunner::commit_changes(&repo, "merge feature").await;
+        assert!(!result.success);
+        assert!(result.error.unwrap().contains("conflicts"));
+    }
+
+    #[test]
+    fn explains_common_git_errors() {
+        let rejected = friendly_error("! [rejected] main -> main (non-fast-forward)");
+        assert!(rejected.contains("Get latest"));
+
+        let auth = friendly_error("fatal: Authentication failed for 'https://example.com'");
+        assert!(auth.contains("sign in"));
     }
 
     #[test]

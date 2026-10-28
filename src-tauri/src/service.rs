@@ -1,6 +1,8 @@
 use crate::config::ConfigManager;
 use crate::git_runner::GitRunner;
-use crate::models::{AppConfig, BranchInfo, OperationResult, RepoGroup, Repository, ScanPath};
+use crate::models::{
+    AppConfig, BranchInfo, FileChange, OperationResult, RepoGroup, Repository, ScanPath,
+};
 use crate::scanner::RepoScanner;
 use crate::watcher::WatcherState;
 use std::collections::HashMap;
@@ -14,7 +16,15 @@ pub fn get_config(config: &ConfigManager) -> Result<AppConfig, String> {
     config.snapshot()
 }
 
-pub fn add_scan_path(config: &ConfigManager, scan_path: ScanPath) -> Result<AppConfig, String> {
+pub fn add_scan_path(config: &ConfigManager, mut scan_path: ScanPath) -> Result<AppConfig, String> {
+    let path = expand_home(&scan_path.path);
+    if !PathBuf::from(&path).is_dir() {
+        return Err(format!(
+            "That folder does not exist or cannot be opened: {path}. Check the path and try again."
+        ));
+    }
+    scan_path.path = path;
+
     {
         let mut cfg = config.config.lock().map_err(|e| e.to_string())?;
         cfg.scan_paths
@@ -23,6 +33,23 @@ pub fn add_scan_path(config: &ConfigManager, scan_path: ScanPath) -> Result<AppC
     }
     config.save()?;
     config.snapshot()
+}
+
+fn expand_home(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+
+    if trimmed == "~" {
+        return home
+            .map(|home| PathBuf::from(home).to_string_lossy().to_string())
+            .unwrap_or_else(|| trimmed.to_string());
+    }
+
+    if let (Some(rest), Some(home)) = (trimmed.strip_prefix("~/"), home) {
+        return PathBuf::from(home).join(rest).to_string_lossy().to_string();
+    }
+
+    trimmed.to_string()
 }
 
 pub fn remove_scan_path(config: &ConfigManager, id: String) -> Result<AppConfig, String> {
@@ -102,6 +129,14 @@ pub async fn discover_repositories(
 
 pub async fn refresh_repository(path: String, group_ids: Vec<String>) -> Repository {
     RepoScanner::inspect_repository(&PathBuf::from(path), group_ids).await
+}
+
+pub async fn list_repo_changes(path: String) -> Vec<FileChange> {
+    GitRunner::list_changes(&PathBuf::from(path)).await
+}
+
+pub async fn commit_repo_changes(path: String, message: String) -> OperationResult {
+    GitRunner::commit_changes(&PathBuf::from(path), &message).await
 }
 
 pub async fn execute_group_action(

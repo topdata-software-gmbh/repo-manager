@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   Archive,
+  ArchiveRestore,
   ArrowDownToLine,
   GitBranch,
+  HelpCircle,
   Loader2,
+  MoreHorizontal,
   RefreshCw,
+  Save,
   Upload,
 } from 'lucide-vue-next';
 import { useRepoStore } from '../stores/repoStore';
@@ -14,6 +18,8 @@ const store = useRepoStore();
 const selectedBranch = ref('');
 const switching = ref(false);
 const activeAction = ref<string | null>(null);
+const moreOpen = ref(false);
+const moreRef = ref<HTMLElement | null>(null);
 
 const busy = computed(() => store.isLoading || store.isScanning);
 const canSwitchBranch = computed(
@@ -22,6 +28,13 @@ const canSwitchBranch = computed(
 const showBranchSelector = computed(
   () => !store.currentGroup || store.currentGroup.settings.syncBranching,
 );
+const dirtyCount = computed(() => store.dirtyRepositories.length);
+const branchSelection = computed({
+  get: () => selectedBranch.value || store.synchronizedBranch || '',
+  set: (value: string) => {
+    selectedBranch.value = value;
+  },
+});
 
 watch(
   () => store.selectedGroupId,
@@ -39,6 +52,15 @@ watch(
   },
 );
 
+function handleOutsideClick(event: MouseEvent): void {
+  if (!moreOpen.value) return;
+  if (moreRef.value?.contains(event.target as Node)) return;
+  moreOpen.value = false;
+}
+
+onMounted(() => document.addEventListener('click', handleOutsideClick));
+onUnmounted(() => document.removeEventListener('click', handleOutsideClick));
+
 async function onBranchChange(): Promise<void> {
   const branch = selectedBranch.value;
   if (!branch || switching.value) return;
@@ -53,8 +75,11 @@ async function onBranchChange(): Promise<void> {
   }
 }
 
-async function runAction(action: 'fetch' | 'pull' | 'push' | 'stash'): Promise<void> {
+async function runAction(
+  action: 'fetch' | 'pull' | 'push' | 'stash' | 'stash_pop',
+): Promise<void> {
   if (activeAction.value || busy.value) return;
+  moreOpen.value = false;
   activeAction.value = action;
   try {
     await store.executeGroupAction(action);
@@ -66,128 +91,163 @@ async function runAction(action: 'fetch' | 'pull' | 'push' | 'stash'): Promise<v
 
 <template>
   <header
-    class="flex h-14 shrink-0 select-none items-center justify-between border-b border-slate-800 bg-slate-900 px-4"
+    class="flex min-h-16 shrink-0 select-none flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5"
   >
-    <div class="flex min-w-0 items-center gap-3">
-      <span class="max-w-44 truncate text-xs font-semibold uppercase tracking-wider text-slate-400">
-        {{ store.currentGroup ? store.currentGroup.name : 'All Repositories' }}
+    <div class="flex min-w-0 flex-wrap items-center gap-3">
+      <span class="max-w-48 truncate text-sm font-semibold text-slate-100">
+        {{ store.currentGroup ? store.currentGroup.name : 'All projects' }}
       </span>
-      <span class="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-xs text-slate-300">
-        {{ store.filteredRepositories.length }} repos
+      <span class="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+        {{ store.filteredRepositories.length }}
+        {{ store.filteredRepositories.length === 1 ? 'project' : 'projects' }}
       </span>
       <span
         v-if="store.filteredRepositories.length > 0"
-        class="hidden items-center gap-1 text-[11px] text-emerald-400/90 xl:flex"
-        title="Repositories without local changes"
+        class="hidden items-center gap-1 text-[11px] text-emerald-400/90 lg:flex"
+        title="Projects with no changes waiting"
       >
         <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-        {{ store.cleanRepositoryCount }} clean
-      </span>
-
-      <div
-        v-if="store.synchronizedBranch"
-        class="hidden items-center gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-300 2xl:flex"
-        title="Every repository in this selection is on the same branch"
-      >
-        <GitBranch class="h-3 w-3" />
-        <span class="font-mono">{{ store.synchronizedBranch }}</span>
-      </div>
-      <span
-        v-else-if="store.commonBranches.length > 1"
-        class="hidden font-mono text-[11px] text-amber-400/90 2xl:block"
-        title="Repositories are spread across multiple branches"
-      >
-        {{ store.commonBranches.length }} branches
+        {{ store.cleanRepositoryCount }} up to date
       </span>
 
       <div
         v-if="showBranchSelector"
-        class="ml-2 flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800/80 px-2 py-1"
-        :title="
-          store.currentGroup?.settings.autoStashOnSwitch === false
-            ? 'Switch every repository to a local branch (auto-stash disabled)'
-            : 'Switch every repository to a local branch (auto-stash enabled)'
-        "
+        class="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5"
+        title="Choose which version of the project you want to work on"
       >
-        <Loader2 v-if="switching || store.isBranchListLoading" class="h-3.5 w-3.5 animate-spin text-cyan-400" />
+        <Loader2
+          v-if="switching || store.isBranchListLoading"
+          class="h-3.5 w-3.5 animate-spin text-cyan-400"
+        />
         <GitBranch v-else class="h-3.5 w-3.5 text-cyan-400" />
+        <span class="text-[11px] font-medium text-slate-400">Working on</span>
         <select
-          v-model="selectedBranch"
+          v-model="branchSelection"
           :disabled="!canSwitchBranch"
-          class="cursor-pointer bg-transparent pr-2 text-xs text-slate-200 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          class="max-w-44 cursor-pointer bg-transparent font-mono text-xs text-slate-100 outline-none disabled:cursor-not-allowed disabled:opacity-50"
           @change="onBranchChange"
         >
           <option value="" disabled>
             {{
               store.filteredRepositories.length === 0
-                ? 'No repositories'
-                : 'Switch group branch…'
+                ? 'No projects yet'
+                : 'Choose a branch…'
             }}
           </option>
-          <option
-            v-for="branch in store.groupBranches"
-            :key="branch.name"
-            :value="branch.name"
-          >
+          <option v-for="branch in store.groupBranches" :key="branch.name" :value="branch.name">
             {{ branch.name }} ({{ branch.repoCount }}/{{ store.filteredRepositories.length }})
           </option>
         </select>
       </div>
     </div>
 
-    <div class="flex items-center gap-1.5">
+    <div class="flex flex-wrap items-center gap-1.5">
       <button
-        class="flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex items-center gap-1.5 rounded-md bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="busy || dirtyCount === 0"
+        title="Create a checkpoint of your changed files in Git"
+        @click="store.openSaveChanges()"
+      >
+        <Save class="h-3.5 w-3.5" />
+        <span>Save to Git</span>
+        <span v-if="dirtyCount > 0" class="rounded-full bg-slate-950/15 px-1.5 text-[10px]">
+          {{ dirtyCount }}
+        </span>
+      </button>
+
+      <button
+        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="busy || store.filteredRepositories.length === 0"
+        title="Download new work from the server and update your project folders"
+        @click="runAction('pull')"
+      >
+        <Loader2 v-if="activeAction === 'pull'" class="h-3.5 w-3.5 animate-spin" />
+        <ArrowDownToLine v-else class="h-3.5 w-3.5 text-emerald-400" />
+        <span>Get latest</span>
+      </button>
+
+      <button
+        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="busy || store.filteredRepositories.length === 0"
+        title="Upload your saved checkpoints to the server"
+        @click="runAction('push')"
+      >
+        <Loader2 v-if="activeAction === 'push'" class="h-3.5 w-3.5 animate-spin" />
+        <Upload v-else class="h-3.5 w-3.5 text-sky-400" />
+        <span>Send changes</span>
+      </button>
+
+      <button
+        class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="busy"
-        title="Rescan configured paths"
+        title="Rescan your project folders"
         @click="store.scanRepositories"
       >
         <Loader2 v-if="store.isScanning" class="h-3.5 w-3.5 animate-spin" />
         <RefreshCw v-else class="h-3.5 w-3.5" />
       </button>
 
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="busy || store.filteredRepositories.length === 0"
-        title="Fetch all repositories in this selection"
-        @click="runAction('fetch')"
-      >
-        <Loader2 v-if="activeAction === 'fetch'" class="h-3.5 w-3.5 animate-spin" />
-        <RefreshCw v-else class="h-3.5 w-3.5" />
-        <span>Fetch</span>
-      </button>
+      <div ref="moreRef" class="relative">
+        <button
+          class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          title="More Git actions"
+          @click="moreOpen = !moreOpen"
+        >
+          <MoreHorizontal class="h-4 w-4" />
+        </button>
+
+        <div
+          v-if="moreOpen"
+          class="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+        >
+          <button
+            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
+            :disabled="busy || store.filteredRepositories.length === 0"
+            @click="runAction('fetch')"
+          >
+            <RefreshCw class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>
+              <span class="block text-xs text-slate-200">Check for updates</span>
+              <span class="block text-[10px] text-slate-500">
+                Looks for new work without changing your files.
+              </span>
+            </span>
+          </button>
+          <button
+            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
+            :disabled="busy || store.filteredRepositories.length === 0"
+            @click="runAction('stash')"
+          >
+            <Archive class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>
+              <span class="block text-xs text-slate-200">Set aside changes</span>
+              <span class="block text-[10px] text-slate-500">
+                Temporarily store unfinished work in all projects.
+              </span>
+            </span>
+          </button>
+          <button
+            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
+            :disabled="busy || store.filteredRepositories.length === 0"
+            @click="runAction('stash_pop')"
+          >
+            <ArchiveRestore class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span>
+              <span class="block text-xs text-slate-200">Bring back set-aside changes</span>
+              <span class="block text-[10px] text-slate-500">
+                Restore the last set of changes in all projects.
+              </span>
+            </span>
+          </button>
+        </div>
+      </div>
 
       <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="busy || store.filteredRepositories.length === 0"
-        title="Fast-forward pull for all repositories in this selection"
-        @click="runAction('pull')"
+        class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+        title="How this works"
+        @click="store.openHelp"
       >
-        <Loader2 v-if="activeAction === 'pull'" class="h-3.5 w-3.5 animate-spin" />
-        <ArrowDownToLine v-else class="h-3.5 w-3.5 text-emerald-400" />
-        <span>Pull</span>
-      </button>
-
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="busy || store.filteredRepositories.length === 0"
-        title="Push all repositories in this selection"
-        @click="runAction('push')"
-      >
-        <Loader2 v-if="activeAction === 'push'" class="h-3.5 w-3.5 animate-spin" />
-        <Upload v-else class="h-3.5 w-3.5 text-sky-400" />
-        <span>Push</span>
-      </button>
-
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        :disabled="busy || store.filteredRepositories.length === 0"
-        title="Stash dirty changes in all repositories in this selection"
-        @click="runAction('stash')"
-      >
-        <Loader2 v-if="activeAction === 'stash'" class="h-3.5 w-3.5 animate-spin" />
-        <Archive v-else class="h-3.5 w-3.5 text-amber-400" />
-        <span>Stash</span>
+        <HelpCircle class="h-4 w-4" />
       </button>
     </div>
   </header>

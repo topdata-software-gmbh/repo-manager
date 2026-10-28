@@ -29,14 +29,16 @@ async function submit(): Promise<void> {
 
   submitting.value = true;
   try {
-    await store.addScanPath({
+    const added = await store.addScanPath({
       id: newId('scan'),
       path: value,
       maxDepth: Math.min(Math.max(Math.round(maxDepth.value), 1), 12),
       enabled: true,
       excludePatterns: [],
     });
-    store.closeScanPathModal();
+    if (added) {
+      store.closeScanPathModal();
+    }
   } finally {
     submitting.value = false;
   }
@@ -56,7 +58,7 @@ async function submit(): Promise<void> {
       <header class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
         <div class="flex items-center gap-2">
           <FolderPlus class="h-4 w-4 text-cyan-400" />
-          <h2 class="text-sm font-semibold text-slate-100">Add scan path</h2>
+          <h2 class="text-sm font-semibold text-slate-100">Add project folder</h2>
         </div>
         <button
           type="button"
@@ -70,7 +72,7 @@ async function submit(): Promise<void> {
       <div class="space-y-4 px-5 py-4">
         <div>
           <label for="scan-path" class="mb-1.5 block text-xs font-medium text-slate-300">
-            Directory containing your repositories
+            Where are your projects?
           </label>
           <input
             id="scan-path"
@@ -78,19 +80,21 @@ async function submit(): Promise<void> {
             type="text"
             autofocus
             spellcheck="false"
-            placeholder="/home/user/devel"
+            placeholder="~/devel"
             class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-500"
           />
           <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-            The directory is scanned recursively. Hidden directories are included, while
-            <span class="font-mono">node_modules</span>, <span class="font-mono">vendor</span>,
-            build output and caches are skipped.
+            Paste the folder where your themes live, for example
+            <span class="font-mono text-slate-400">~/devel</span> or
+            <span class="font-mono text-slate-400">/home/you/projects</span>. We look inside it for
+            Git projects and skip things like <span class="font-mono">node_modules</span> and build
+            output.
           </p>
         </div>
 
         <div class="w-40">
           <label for="scan-depth" class="mb-1.5 block text-xs font-medium text-slate-300">
-            Max scan depth
+            How deep to look
           </label>
           <input
             id="scan-depth"
@@ -117,7 +121,7 @@ async function submit(): Promise<void> {
           class="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Loader2 v-if="submitting" class="h-3.5 w-3.5 animate-spin" />
-          <span>Add &amp; scan</span>
+          <span>Find my projects</span>
         </button>
       </footer>
     </form>

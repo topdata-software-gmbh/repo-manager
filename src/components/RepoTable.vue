@@ -2,17 +2,17 @@
 import { computed, ref } from 'vue';
 import {
   AlertCircle,
-  ArrowDown,
-  ArrowUp,
-  Check,
+  BookOpen,
   FolderPlus,
   GitBranch,
   GitMerge,
   Loader2,
   RefreshCw,
+  Save,
   Search,
 } from 'lucide-vue-next';
 import { useRepoStore } from '../stores/repoStore';
+import type { Repository } from '../types/domain';
 
 const store = useRepoStore();
 const search = ref('');
@@ -39,190 +39,215 @@ async function refresh(path: string): Promise<void> {
   }
 }
 
+interface StatusBadge {
+  label: string;
+  className: string;
+}
+
+function statusBadges(repo: Repository): StatusBadge[] {
+  if (!repo.isAccessible) {
+    return [{ label: 'Folder not found', className: 'bg-rose-500/15 text-rose-300' }];
+  }
+
+  const badges: StatusBadge[] = [];
+
+  if (repo.state.hasConflicts) {
+    badges.push({ label: 'Needs attention', className: 'bg-rose-500/15 text-rose-300' });
+  }
+
+  if (repo.state.operationState !== 'idle') {
+    badges.push({
+      label: operationLabel(repo.state.operationState),
+      className: 'bg-amber-500/15 text-amber-300',
+    });
+  }
+
+  if (!repo.state.isClean) {
+    badges.push({ label: 'Changes not saved', className: 'bg-amber-500/10 text-amber-300' });
+  }
+
+  if (repo.state.behindCount > 0) {
+    badges.push({
+      label: `${repo.state.behindCount} ${repo.state.behindCount === 1 ? 'update' : 'updates'} available`,
+      className: 'bg-sky-500/10 text-sky-300',
+    });
+  }
+
+  if (repo.state.aheadCount > 0) {
+    badges.push({
+      label: `${repo.state.aheadCount} to send`,
+      className: 'bg-emerald-500/10 text-emerald-300',
+    });
+  }
+
+  if (repo.state.remotes.length === 0) {
+    badges.push({ label: 'On this computer only', className: 'bg-slate-800 text-slate-400' });
+  } else if (repo.state.isClean && repo.state.aheadCount === 0 && repo.state.behindCount === 0) {
+    badges.push({ label: 'Up to date', className: 'bg-emerald-500/10 text-emerald-300' });
+  }
+
+  return badges;
+}
+
 function operationLabel(operation: string): string {
   switch (operation) {
     case 'merging':
-      return 'Merging';
+      return 'Merge in progress';
     case 'rebasing':
-      return 'Rebasing';
+      return 'Rebase in progress';
     case 'cherry-picking':
-      return 'Cherry-picking';
+      return 'Cherry-pick in progress';
     default:
-      return '';
+      return 'Git operation in progress';
   }
+}
+
+function branchLabel(repo: Repository): string {
+  return repo.state.isDetachedHead ? 'Not on a branch' : repo.state.currentBranch || 'Unknown';
 }
 </script>
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col bg-slate-900">
-    <div class="flex shrink-0 items-center justify-between border-b border-slate-800/70 px-4 py-2">
-      <div class="relative w-72">
-        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+    <div class="flex shrink-0 items-center justify-between gap-4 border-b border-slate-800/70 px-4 py-2.5">
+      <div class="relative w-full max-w-sm">
+        <Search
+          class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
+        />
         <input
           v-model="search"
           type="text"
-          placeholder="Filter repositories…"
-          class="w-full rounded-md border border-slate-800 bg-slate-950 py-1.5 pl-8 pr-3 text-xs text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-600"
+          placeholder="Search projects…"
+          class="w-full rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-9 pr-3 text-xs text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-600"
         />
       </div>
-      <span class="font-mono text-[11px] text-slate-500">
+      <span class="shrink-0 font-mono text-[11px] text-slate-500">
         {{ rows.length }} of {{ store.filteredRepositories.length }} shown
       </span>
     </div>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <table v-if="rows.length > 0" class="w-full min-w-[900px] border-collapse text-left text-xs">
+      <table v-if="rows.length > 0" class="w-full min-w-[780px] border-collapse text-left">
         <thead
           class="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 text-[10px] font-semibold uppercase tracking-wider text-slate-400 backdrop-blur"
         >
           <tr>
-            <th class="px-4 py-2.5">Repository</th>
-            <th class="px-4 py-2.5">Current Branch</th>
-            <th class="px-4 py-2.5">Sync Status</th>
-            <th class="px-4 py-2.5">Changes</th>
-            <th class="px-4 py-2.5">Last Commit</th>
-            <th class="w-12 px-2 py-2.5"><span class="sr-only">Actions</span></th>
+            <th class="px-4 py-2.5">Project</th>
+            <th class="px-4 py-2.5">Status</th>
+            <th class="px-4 py-2.5">Latest checkpoint</th>
+            <th class="w-36 px-3 py-2.5"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/60 font-mono">
+        <tbody class="divide-y divide-slate-800/60">
           <tr
             v-for="repo in rows"
             :key="repo.id"
             class="transition-colors hover:bg-slate-800/40"
             :class="{ 'opacity-60': !repo.isAccessible }"
           >
-            <td class="px-4 py-2.5">
-              <div class="flex items-center gap-2 font-sans font-medium text-slate-100">
-                <span>{{ repo.name }}</span>
+            <td class="px-4 py-3">
+              <div class="flex items-center gap-2 text-sm font-medium text-slate-100">
+                <span class="truncate">{{ repo.name }}</span>
                 <span
-                  v-if="!repo.isAccessible"
-                  class="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-normal text-rose-400"
+                  v-if="repo.state.isDetachedHead"
+                  class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-300"
                 >
-                  missing
+                  not on a branch
                 </span>
               </div>
-              <div class="max-w-xs truncate text-[11px] text-slate-500" :title="repo.path">
-                {{ repo.path }}
-              </div>
-            </td>
-
-            <td class="px-4 py-2.5">
-              <div
-                class="inline-flex items-center gap-1.5 rounded border border-slate-700/60 bg-slate-800 px-2 py-0.5 text-cyan-300"
-                :title="
-                  repo.state.isDetachedHead
-                    ? 'Detached HEAD'
-                    : repo.state.currentBranch
-                "
-              >
-                <GitBranch class="h-3 w-3 shrink-0 text-cyan-400" />
-                <span class="max-w-40 truncate">{{ repo.state.currentBranch || '—' }}</span>
-              </div>
-              <div
-                v-if="repo.state.operationState !== 'idle'"
-                class="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400"
-              >
-                <GitMerge class="h-3 w-3" />
-                <span>{{ operationLabel(repo.state.operationState) }}</span>
-              </div>
-            </td>
-
-            <td class="px-4 py-2.5">
-              <div class="flex items-center gap-3">
+              <div class="mt-1 flex flex-wrap items-center gap-2">
                 <span
-                  class="flex items-center gap-0.5 text-[11px]"
-                  :class="repo.state.aheadCount > 0 ? 'font-bold text-emerald-400' : 'text-slate-600'"
-                  title="Commits ahead of upstream"
+                  class="inline-flex items-center gap-1 rounded border border-slate-700/60 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]"
+                  :class="
+                    repo.state.isDetachedHead
+                      ? 'text-amber-300'
+                      : 'text-cyan-300'
+                  "
+                  title="The branch (version) you are working on"
                 >
-                  <ArrowUp class="h-3 w-3" />
-                  <span>{{ repo.state.aheadCount }}</span>
+                  <GitBranch class="h-3 w-3 shrink-0" />
+                  {{ branchLabel(repo) }}
                 </span>
-                <span
-                  class="flex items-center gap-0.5 text-[11px]"
-                  :class="repo.state.behindCount > 0 ? 'font-bold text-amber-400' : 'text-slate-600'"
-                  title="Commits behind upstream"
-                >
-                  <ArrowDown class="h-3 w-3" />
-                  <span>{{ repo.state.behindCount }}</span>
-                </span>
-              </div>
-              <div
-                v-if="repo.state.remotes.length === 0"
-                class="mt-0.5 text-[10px] text-slate-600"
-              >
-                no remote
-              </div>
-            </td>
-
-            <td class="px-4 py-2.5 font-sans">
-              <span
-                v-if="repo.state.isClean"
-                class="inline-flex items-center gap-1 text-xs text-emerald-400"
-              >
-                <Check class="h-3.5 w-3.5" />
-                <span>Clean</span>
-              </span>
-              <span
-                v-else-if="repo.state.hasConflicts"
-                class="inline-flex items-center gap-1 text-xs font-semibold text-rose-400"
-              >
-                <AlertCircle class="h-3.5 w-3.5" />
-                <span>Conflict</span>
-              </span>
-              <div v-else class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                <span v-if="repo.state.modifiedFiles > 0" class="text-amber-300">
-                  {{ repo.state.modifiedFiles }} modified
-                </span>
-                <span v-if="repo.state.untrackedFiles > 0" class="text-slate-400">
-                  {{ repo.state.untrackedFiles }} untracked
-                </span>
-                <span v-if="repo.state.stagedFiles > 0" class="text-cyan-300">
-                  {{ repo.state.stagedFiles }} staged
+                <span class="max-w-[28rem] truncate text-[10px] text-slate-500" :title="repo.path">
+                  {{ repo.path }}
                 </span>
               </div>
             </td>
 
-            <td class="px-4 py-2.5 font-sans text-slate-400">
-              <div v-if="repo.state.headCommitHash" class="flex items-center gap-1.5">
-                <span class="font-mono text-[11px] text-cyan-400">
-                  {{ repo.state.headCommitHash }}
-                </span>
+            <td class="px-4 py-3">
+              <div class="flex max-w-xs flex-wrap items-center gap-1.5">
                 <span
-                  class="max-w-sm truncate text-xs text-slate-300"
-                  :title="repo.state.headCommitMessage"
+                  v-for="badge in statusBadges(repo)"
+                  :key="badge.label"
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  :class="badge.className"
                 >
+                  <AlertCircle
+                    v-if="badge.label === 'Needs attention'"
+                    class="h-3 w-3"
+                  />
+                  <GitMerge
+                    v-else-if="badge.label.includes('in progress')"
+                    class="h-3 w-3"
+                  />
+                  {{ badge.label }}
+                </span>
+              </div>
+            </td>
+
+            <td class="px-4 py-3">
+              <div v-if="repo.state.headCommitHash" class="min-w-0">
+                <p class="max-w-md truncate text-xs text-slate-300" :title="repo.state.headCommitMessage">
                   {{ repo.state.headCommitMessage }}
-                </span>
+                </p>
+                <p class="mt-0.5 font-mono text-[10px] text-slate-500">
+                  {{ repo.state.headCommitHash }}
+                </p>
               </div>
-              <span v-else class="text-[11px] italic text-slate-600">No commits yet</span>
+              <span v-else class="text-[11px] italic text-slate-600">
+                No checkpoints saved yet
+              </span>
             </td>
 
-            <td class="px-2 py-2.5">
-              <button
-                class="rounded p-1 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 disabled:opacity-50"
-                :disabled="refreshing === repo.path"
-                title="Refresh this repository"
-                @click="refresh(repo.path)"
-              >
-                <Loader2
-                  v-if="refreshing === repo.path"
-                  class="h-3.5 w-3.5 animate-spin"
-                />
-                <RefreshCw v-else class="h-3.5 w-3.5" />
-              </button>
+            <td class="px-3 py-3">
+              <div class="flex items-center justify-end gap-1.5">
+                <button
+                  v-if="!repo.state.isClean"
+                  class="flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+                  :disabled="store.isLoading"
+                  :title="
+                    repo.state.hasConflicts
+                      ? 'Review the changed files (resolve conflicts before saving)'
+                      : 'Save changes in this project to Git'
+                  "
+                  @click="store.openSaveChanges([repo.path])"
+                >
+                  <Save class="h-3 w-3" />
+                  <span>{{ repo.state.hasConflicts ? 'Review' : 'Save' }}</span>
+                </button>
+                <button
+                  class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 disabled:opacity-50"
+                  :disabled="refreshing === repo.path"
+                  title="Refresh this project"
+                  @click="refresh(repo.path)"
+                >
+                  <Loader2
+                    v-if="refreshing === repo.path"
+                    class="h-3.5 w-3.5 animate-spin"
+                  />
+                  <RefreshCw v-else class="h-3.5 w-3.5" />
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
       </table>
 
-      <div
-        v-else-if="store.isScanning"
-        class="space-y-2 p-6"
-      >
+      <div v-else-if="store.isScanning" class="space-y-2 p-6">
         <div
           v-for="index in 5"
           :key="index"
-          class="h-12 animate-pulse rounded-lg border border-slate-800 bg-slate-800/30"
+          class="h-14 animate-pulse rounded-lg border border-slate-800 bg-slate-800/30"
         ></div>
       </div>
 
@@ -236,28 +261,38 @@ function operationLabel(operation: string): string {
         </div>
 
         <template v-if="!hasScanPaths">
-          <h2 class="text-sm font-semibold text-slate-200">No scan paths configured</h2>
-          <p class="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-            Point the manager at a directory containing your Git repositories. Repositories are
-            discovered automatically, including nested services.
+          <h2 class="text-base font-semibold text-slate-100">Let's find your projects</h2>
+          <p class="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+            Choose the folder where your themes and projects live. We will look inside it and add
+            every Git project we find.
           </p>
-          <button
-            class="mt-4 rounded-lg bg-cyan-500 px-3.5 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
-            @click="store.openAddScanPath"
-          >
-            Add scan path
-          </button>
+          <div class="mt-4 flex items-center gap-2">
+            <button
+              class="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
+              @click="store.openAddScanPath"
+            >
+              Add project folder
+            </button>
+            <button
+              class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+              @click="store.openHelp"
+            >
+              <BookOpen class="h-3.5 w-3.5" />
+              How this works
+            </button>
+          </div>
         </template>
 
-        <template v-else-if="store.selectedGroupId !== 'all' && store.filteredRepositories.length === 0">
-          <h2 class="text-sm font-semibold text-slate-200">This group is empty</h2>
-          <p class="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-            Assign repositories to
-            <span class="text-slate-300">{{ store.currentGroup?.name }}</span>
-            to run group-wide fetch, pull, push and branch switches.
+        <template
+          v-else-if="store.selectedGroupId !== 'all' && store.filteredRepositories.length === 0"
+        >
+          <h2 class="text-base font-semibold text-slate-100">No projects in this group</h2>
+          <p class="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+            Add projects to <span class="text-slate-200">{{ store.currentGroup?.name }}</span> to use
+            the buttons above for the whole group.
           </p>
           <button
-            class="mt-4 rounded-lg bg-cyan-500 px-3.5 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
+            class="mt-4 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
             @click="store.openGroupEditor(store.currentGroup)"
           >
             Edit group
@@ -265,35 +300,35 @@ function operationLabel(operation: string): string {
         </template>
 
         <template v-else-if="store.filteredRepositories.length === 0">
-          <h2 class="text-sm font-semibold text-slate-200">No repositories found</h2>
-          <p class="mt-1 max-w-sm text-xs leading-relaxed text-slate-500">
-            The configured directories do not contain a Git repository within the scan depth.
-            Adjust the scan depth or add another path.
+          <h2 class="text-base font-semibold text-slate-100">No Git projects found</h2>
+          <p class="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+            We looked inside your folders but did not find a Git project. Check that the folder is
+            correct, or add another folder.
           </p>
           <div class="mt-4 flex gap-2">
             <button
-              class="rounded-lg bg-slate-800 px-3.5 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700"
+              class="rounded-lg bg-slate-800 px-4 py-2 text-xs text-slate-200 transition-colors hover:bg-slate-700"
               @click="store.scanRepositories"
             >
-              Rescan
+              Scan again
             </button>
             <button
-              class="rounded-lg bg-cyan-500 px-3.5 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
+              class="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
               @click="store.openAddScanPath"
             >
-              Add scan path
+              Add project folder
             </button>
           </div>
         </template>
 
         <template v-else>
-          <h2 class="text-sm font-semibold text-slate-200">No matching repositories</h2>
-          <p class="mt-1 text-xs text-slate-500">Clear the filter to see all repositories.</p>
+          <h2 class="text-base font-semibold text-slate-100">No matching projects</h2>
+          <p class="mt-1.5 text-sm text-slate-400">Try a different search, or clear the filter.</p>
           <button
             class="mt-4 rounded-lg px-3 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
             @click="search = ''"
           >
-            Clear filter
+            Clear search
           </button>
         </template>
       </div>

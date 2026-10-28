@@ -69,6 +69,13 @@ export interface BranchInfo {
   repoCount: number;
 }
 
+export type FileChangeStatus = 'modified' | 'new' | 'deleted' | 'renamed' | 'conflict';
+
+export interface FileChange {
+  path: string;
+  status: FileChangeStatus;
+}
+
 export interface OperationProgressEvent {
   repoPath: string;
   operation: 'fetch' | 'pull' | 'push' | 'checkout' | 'stash';

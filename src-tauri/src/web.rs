@@ -1,5 +1,7 @@
 use crate::config::ConfigManager;
-use crate::models::{AppConfig, BranchInfo, OperationResult, RepoGroup, Repository, ScanPath};
+use crate::models::{
+    AppConfig, BranchInfo, FileChange, OperationResult, RepoGroup, Repository, ScanPath,
+};
 use crate::service;
 use crate::watcher::{EventBus, WatcherState};
 use axum::extract::{Path as AxumPath, Request, State};
@@ -74,6 +76,19 @@ struct BranchListRequest {
     repo_paths: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepoRequest {
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitRequest {
+    path: String,
+    message: String,
+}
+
 async fn get_config(State(state): State<Arc<WebState>>) -> ApiResult<AppConfig> {
     service::get_config(state.config.as_ref())
         .map(Json)
@@ -134,6 +149,16 @@ async fn discover_repositories(
 async fn refresh_repository(Json(request): Json<RefreshRequest>) -> ApiResult<Repository> {
     Ok(Json(
         service::refresh_repository(request.path, request.group_ids).await,
+    ))
+}
+
+async fn list_repo_changes(Json(request): Json<RepoRequest>) -> ApiResult<Vec<FileChange>> {
+    Ok(Json(service::list_repo_changes(request.path).await))
+}
+
+async fn commit_repo_changes(Json(request): Json<CommitRequest>) -> ApiResult<OperationResult> {
+    Ok(Json(
+        service::commit_repo_changes(request.path, request.message).await,
     ))
 }
 
@@ -264,6 +289,8 @@ async fn serve(options: WebOptions) -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/groups/{id}", delete(delete_repo_group))
         .route("/api/repositories/discover", post(discover_repositories))
         .route("/api/repositories/refresh", post(refresh_repository))
+        .route("/api/repositories/changes", post(list_repo_changes))
+        .route("/api/repositories/commit", post(commit_repo_changes))
         .route("/api/repositories/actions", post(execute_group_action))
         .route("/api/repositories/switch-branch", post(switch_group_branch))
         .route("/api/branches", post(list_group_branches))
