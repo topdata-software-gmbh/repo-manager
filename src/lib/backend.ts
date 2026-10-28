@@ -1,0 +1,203 @@
+import type {
+  AppConfig,
+  BranchInfo,
+  OperationResult,
+  RepoGroup,
+  Repository,
+  ScanPath,
+} from '../types/domain';
+
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+export const backendMode: 'desktop' | 'web' = isTauri ? 'desktop' : 'web';
+
+const TOKEN_STORAGE_KEY = 'git-repo-manager.web-token';
+
+function captureWebToken(): void {
+  if (isTauri || typeof window === 'undefined') return;
+
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('token');
+  if (!token) return;
+
+  try {
+    window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch {
+    // Session storage can be unavailable in hardened browser profiles.
+  }
+
+  url.searchParams.delete('token');
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+captureWebToken();
+
+export function getWebToken(): string | null {
+  try {
+    return window.sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setWebToken(token: string): void {
+  try {
+    if (token) {
+      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage failures; requests will be rejected by the server.
+  }
+}
+
+async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(command, args);
+}
+
+async function httpRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = getWebToken();
+  const response = await fetch(path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const message = (await response.text()).trim();
+    throw new Error(message || `${response.status} ${response.statusText}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function request<T>(
+  tauriCommand: string,
+  tauriArgs: Record<string, unknown>,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  return isTauri
+    ? tauriInvoke<T>(tauriCommand, tauriArgs)
+    : httpRequest<T>(method, path, body);
+}
+
+export const backend = {
+  getConfig(): Promise<AppConfig> {
+    return request<AppConfig>('get_config', {}, 'GET', '/api/config');
+  },
+
+  addScanPath(scanPath: ScanPath): Promise<AppConfig> {
+    return request<AppConfig>(
+      'add_scan_path',
+      { scanPath },
+      'POST',
+      '/api/scan-paths',
+      scanPath,
+    );
+  },
+
+  removeScanPath(id: string): Promise<AppConfig> {
+    return request<AppConfig>(
+      'remove_scan_path',
+      { id },
+      'DELETE',
+      `/api/scan-paths/${encodeURIComponent(id)}`,
+    );
+  },
+
+  saveRepoGroup(group: RepoGroup): Promise<AppConfig> {
+    return request<AppConfig>('save_repo_group', { group }, 'POST', '/api/groups', group);
+  },
+
+  deleteRepoGroup(groupId: string): Promise<AppConfig> {
+    return request<AppConfig>(
+      'delete_repo_group',
+      { groupId },
+      'DELETE',
+      `/api/groups/${encodeURIComponent(groupId)}`,
+    );
+  },
+
+  discoverRepositories(paths: string[], maxDepth: number): Promise<Repository[]> {
+    return request<Repository[]>(
+      'discover_repositories',
+      { paths, maxDepth },
+      'POST',
+      '/api/repositories/discover',
+      { paths, maxDepth },
+    );
+  },
+
+  refreshRepository(path: string, groupIds: string[]): Promise<Repository> {
+    return request<Repository>(
+      'refresh_repository',
+      { path, groupIds },
+      'POST',
+      '/api/repositories/refresh',
+      { path, groupIds },
+    );
+  },
+
+  executeGroupAction(
+    repoPaths: string[],
+    action: string,
+    concurrencyLimit: number,
+  ): Promise<OperationResult[]> {
+    return request<OperationResult[]>(
+      'execute_group_action',
+      { repoPaths, action, concurrencyLimit },
+      'POST',
+      '/api/repositories/actions',
+      { repoPaths, action, concurrencyLimit },
+    );
+  },
+
+  switchGroupBranch(
+    repoPaths: string[],
+    branch: string,
+    autoStash: boolean,
+  ): Promise<OperationResult[]> {
+    return request<OperationResult[]>(
+      'switch_group_branch',
+      { repoPaths, branch, autoStash },
+      'POST',
+      '/api/repositories/switch-branch',
+      { repoPaths, branch, autoStash },
+    );
+  },
+
+  listGroupBranches(repoPaths: string[]): Promise<BranchInfo[]> {
+    return request<BranchInfo[]>(
+      'list_group_branches',
+      { repoPaths },
+      'POST',
+      '/api/branches',
+      { repoPaths },
+    );
+  },
+};
+
+export async function subscribeToRepoChanges(
+  callback: (path: string) => void,
+): Promise<() => void> {
+  if (isTauri) {
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen<string>('repo:fs-changed', (event) => callback(event.payload));
+  }
+
+  const token = getWebToken();
+  const url = new URL('/api/events', window.location.href);
+  if (token) url.searchParams.set('token', token);
+
+  const source = new EventSource(url);
+  const handler = (event: Event) => callback((event as MessageEvent<string>).data);
+  source.addEventListener('repo-fs-changed', handler as EventListener);
+
+  return () => source.close();
+}

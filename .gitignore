@@ -12,7 +12,13 @@ env/
 *.egg-info/
 .eggs/
 dist/
+dist-ssr/
 build/
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+*.local
 
 # IDEs and editors
 .idea/
