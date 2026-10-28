@@ -1,0 +1,4 @@
+project_id: repo-manager
+export:
+  format: markdown
+  path: _ai/conventions.md
