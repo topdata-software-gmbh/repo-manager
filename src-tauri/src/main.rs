@@ -70,7 +70,6 @@ fn run_desktop(cli: Cli) {
     let watcher_state = WatcherState::new(event_bus.clone());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .manage(config_manager)
         .manage(event_bus)
         .manage(watcher_state)

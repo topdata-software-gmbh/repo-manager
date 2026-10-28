@@ -79,6 +79,37 @@ Build a desktop installer/bundle:
 pnpm tauri build
 ```
 
+### Install a command on your PATH
+
+Build a release binary and install it as `git-repo-manager`:
+
+```bash
+pnpm install:bin
+```
+
+The default target is `~/.local/bin`. To install elsewhere, or to symlink the
+release binary for live rebuilds:
+
+```bash
+./scripts/install.sh --prefix /usr/local/bin
+./scripts/install.sh --symlink
+```
+
+Then start the desktop app with:
+
+```bash
+git-repo-manager
+```
+
+For browser mode from this checkout, point the server at the built assets:
+
+```bash
+git-repo-manager --web --port 8787 --dist ./dist
+```
+
+On first launch the main panel shows **Let's find your projects**: add the folder
+where your repositories live, then click **Find my projects**.
+
 ## Web server mode
 
 Build the frontend once, then start the binary in web mode:
@@ -251,6 +282,7 @@ src-tauri/src/           Rust backend
   web.rs                 axum server, SSE, token middleware
   main.rs                CLI and application entry point
 assets/                  Icon source
+scripts/install.sh       Build and install the release binary
 ```
 
 ## Security notes

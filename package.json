@@ -8,11 +8,11 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "install:bin": "./scripts/install.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-shell": "^2.0.0",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^2.2.0",
     "vue": "^3.4.30"

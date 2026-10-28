@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Tauri v2 desktop application with a Vue 3, TypeScript, Tailwind CSS, and Pinia UI.
+- `scripts/install.sh` / `pnpm install:bin` to build and install the release
+  binary on `PATH`, with `--prefix`, `--symlink`, and `--no-build` options.
 - Recursive multi-repository discovery with `.gitignore` awareness, dependency
   folder pruning, configurable depth, enable/disable, and exclusion patterns.
 - Repository groups with colors, repository assignment, synchronous branch
@@ -51,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Removed the unused `tauri-plugin-shell` dependency that blocked release builds
+  with a Rust/npm version mismatch.
+- Changed the bundle identifier to avoid the macOS `.app` suffix conflict warning.
 - The first line of `git status --porcelain` lost its leading status column when
   the output was trimmed, which shifted the reported path by one character and
   could hide a modified file.
