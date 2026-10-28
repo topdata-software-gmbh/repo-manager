@@ -1,8 +1,9 @@
 # Git Repo Manager
 
-A lightweight multi-repository Git GUI. Discover repositories below configured
-folders, group them (for example "Shop Microservices"), watch their Git state,
-and switch branches, fetch, pull, push, or stash across a whole group at once.
+A lightweight, beginner-friendly multi-repository Git GUI. Discover repositories
+below configured folders, group them (for example "Shop themes"), watch their Git
+state, and save, fetch, pull, push, or stash across a whole group at once — with
+plain-language guidance instead of Git jargon.
 
 The core is written in Rust and shared by two frontends:
 
@@ -23,12 +24,30 @@ user's SSH agent, credential helpers, and GPG signing configuration.
   switching, auto-stash on switch, and a configurable base branch.
 - Live repository state via `.git` filesystem events (with automatic polling
   fallback when the operating system's watch limit is exhausted).
+- Guided **Save to Git** flow: preview changed files, write one plain-language
+  message, and commit each dirty project in the selection.
+- Pull automatically sets aside unfinished changes and restores them afterwards;
+  push creates the upstream branch when needed.
+- Friendly error messages translate common Git failures into the next action.
 - Parallel group actions bounded by a concurrency semaphore (fetch, fast-forward
   pull, push, stash, stash pop).
-- Status matrix with branch, ahead/behind, clean/dirty, conflicts, and
+- Status matrix with plain-language badges, branch, ahead/behind, conflicts, and
   in-progress operation detection (merge, rebase, cherry-pick).
+- Built-in help modal, next-step guidance banner, and friendly empty states.
 - JSON configuration persisted atomically; no database.
 - Browser mode with optional bearer-token protection and server-sent events.
+
+## Everyday workflow
+
+1. **Add project folder** once. The app finds the Git projects inside it.
+2. Edit your files normally in your editor.
+3. Click **Save to Git** at a checkpoint and describe what changed.
+4. Click **Get latest** before starting work and **Send changes** when finished.
+5. Use **How this works** in the app for a plain-English glossary and recovery
+   guidance.
+
+The toolbar groups the common actions; fetch, stash, and stash pop live under the
+**More** menu.
 
 ## Requirements
 
@@ -184,6 +203,8 @@ All routes are under `/api` and require the token when one is configured.
 | DELETE | `/api/groups/{id}` | Remove a group |
 | POST | `/api/repositories/discover` | Scan paths and return repository states |
 | POST | `/api/repositories/refresh` | Refresh one repository |
+| POST | `/api/repositories/changes` | List changed files for one repository |
+| POST | `/api/repositories/commit` | Commit all changes in one repository |
 | POST | `/api/repositories/actions` | Fetch/pull/push/stash across repositories |
 | POST | `/api/repositories/switch-branch` | Switch a set of repositories to a branch |
 | POST | `/api/branches` | List local branches with repository counts |

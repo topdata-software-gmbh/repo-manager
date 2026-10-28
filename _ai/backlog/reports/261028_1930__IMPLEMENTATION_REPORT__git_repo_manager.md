@@ -2,12 +2,12 @@
 filename: "_ai/backlog/reports/261028_1930__IMPLEMENTATION_REPORT__git_repo_manager.md"
 title: "Report: git-repo-manager Multi-Git GUI Architecture and Implementation"
 createdAt: 2026-10-28 19:30
-updatedAt: 2026-10-28 20:05
+updatedAt: 2026-10-28 21:47
 planFile: "_ai/backlog/archive/261028_1930__IMPLEMENTATION_PLAN__git_repo_manager.md"
 specFile: ""
 project: "git-repo-manager"
 status: completed
-filesCreated: 58
+filesCreated: 61
 filesModified: 3
 filesDeleted: 0
 tags: [git, tauri, rust, vue3, multi-repo, web]
@@ -58,9 +58,12 @@ same event bus; only the transport differs (Tauri IPC vs HTTP/SSE).
 - `src/types/domain.ts` — shared domain types, `OperationResult`, `BranchInfo`
 - `src/lib/backend.ts` — Tauri/web transport switch, token capture, SSE client
 - `src/stores/repoStore.ts` — Pinia state and group actions
-- `src/components/Toolbar.vue` — group branch selector and action bar
-- `src/components/Sidebar.vue` — groups and scan paths
-- `src/components/RepoTable.vue` — repository status matrix
+- `src/components/Toolbar.vue` — group branch selector and friendly action bar
+- `src/components/Sidebar.vue` — groups and project folders
+- `src/components/RepoTable.vue` — repository status matrix with row save action
+- `src/components/GuidanceBanner.vue` — contextual next-step guidance
+- `src/components/SaveChangesModal.vue` — changed-file preview and commit message
+- `src/components/HelpModal.vue` — workflow guide and plain-English glossary
 - `src/components/AddScanPathModal.vue`
 - `src/components/GroupEditorModal.vue`
 - `src/components/ToastStack.vue`
@@ -98,10 +101,15 @@ same event bus; only the transport differs (Tauri IPC vs HTTP/SSE).
   `origin/<branch>` fallback.
 - Group actions run with a semaphore (default clients pass 5; the service clamps
   to 1–32).
-- Branch checkout runs `git stash push` when enabled, checks out, then restores
+- Branch checkout runs `git stash push -u` when enabled, checks out, then restores
   the autostash on both success and failure. Switching to the current branch is a
   no-op. If restoration fails, the result is marked failed and the changes are
   reported as remaining in `git stash list`.
+- Pull uses the same autostash mechanism; push detects `@{upstream}` and falls
+  back to `git push -u origin <branch>`.
+- `list_changes` parses `git status --porcelain=v1 --untracked-files=all`;
+  `commit_changes` validates a non-empty message, refuses empty change sets, runs
+  `git add -A`, and commits with `git commit -m`.
 - All Rust models use `#[serde(rename_all = "camelCase")]`, fixing a plan-level
   mismatch between Rust snake_case fields and the TypeScript API.
 
@@ -129,12 +137,27 @@ same event bus; only the transport differs (Tauri IPC vs HTTP/SSE).
 
 ### UI
 
-- The toolbar exposes a group branch selector, action buttons, group scope, repo
-  count, clean count, and synchronized/mixed-branch indicators.
-- The sidebar manages groups and scan paths; modals edit groups and add scan
-  paths; toasts summarize multi-repository successes and failures.
-- The repository table includes search, per-row refresh, status badges, branch,
-  ahead/behind, remotes, and empty states.
+- The toolbar exposes a group branch selector (`Working on`), `Save to Git`,
+  `Get latest`, `Send changes`, a More menu for fetch/stash, rescan, and help.
+- The sidebar manages groups and project folders; modals edit groups, add scan
+  paths, save changes, and explain Git concepts in plain English.
+- The repository table includes search, per-row save/refresh, plain-language
+  status badges, branch, latest checkpoint, and guided empty states.
+- The guidance banner chooses the single most important next action: fix missing
+  folders, resolve conflicts, finish an operation, switch to a branch, save,
+  pull, or push.
+- Toasts summarize multi-project successes and failures with friendly verbs and
+  the first actionable line of each Git error.
+
+### Commit and recovery behavior
+
+- `Save to Git` opens a modal that snapshots dirty projects, lists changed files
+  with a read-only status, accepts a required message, and commits each project
+  sequentially. Successful projects close; failures remain visible with details.
+- The help modal explains branch, save, get latest, send changes, and stash in
+  plain English, and reassures users that the buttons do not delete work.
+- Scan paths accept `~/...` and are rejected with a clear error when the folder
+  does not exist.
 
 ## 4. Deviations and Plan Corrections
 
@@ -149,6 +172,13 @@ same event bus; only the transport differs (Tauri IPC vs HTTP/SSE).
   user's request; this was not in the original plan.
 - Removed `windows_subsystem = "windows"` so web mode can print its URL and token
   in a terminal.
+- After the initial implementation, added a beginner-focused UX pass because the
+  primary user is a theme coder who struggles with Git. This added change
+  listing/committing, the Save to Git modal, guidance banner, help modal, friendly
+  statuses, and the plain-language toolbar; it was not in the original plan.
+- Fixed a latent porcelain parsing bug found by the new commit test: trimming the
+  whole status output removed the first line's leading status column and shifted
+  its path by one character.
 
 ## 5. Verification
 
@@ -156,13 +186,16 @@ same event bus; only the transport differs (Tauri IPC vs HTTP/SSE).
 | :--- | :--- |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | Passed |
 | `cargo fmt --manifest-path src-tauri/Cargo.toml` | Passed |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | 4/4 passed |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | 7/7 passed |
 | `pnpm typecheck` (`vue-tsc --noEmit`) | Passed |
 | `pnpm build` | Passed; production `dist/` generated |
 | Web `GET /api/config` | 200 with empty config |
 | Web `POST /api/scan-paths` | 200; config persisted |
 | Web `POST /api/repositories/discover` | 200; returned repo with correct state |
 | Web `POST /api/branches` | 200; `main` with repo count 1 |
+| Web `POST /api/repositories/changes` | 200; returned modified `style.css` |
+| Web `POST /api/repositories/commit` | 200; commit created, empty repeat rejected |
+| Built UI asset contains `Save to Git` | Present |
 | Web static `GET /` | 200 |
 | Token-protected API without/with token | 401 / 200 |
 | Token query auth with special characters | 200 |
@@ -183,6 +216,10 @@ shared service is exercised by the tests and web smoke test.
   report zero.
 - The polling fallback is a safety net; file-event watching remains the primary
   mechanism and is preferable for large repository sets.
+- Save to Git intentionally commits all changes in a project; there is no hunk or
+  per-file staging UI. Conflicts must still be resolved in an editor first.
+- Saving uses the system Git identity and configuration, including GPG signing;
+  the app does not provide its own identity setup form.
 - No macOS bundle was produced in this Linux environment. The browser mode works
   cross-platform, and macOS can build the app natively with the documented
   prerequisites.
@@ -196,3 +233,8 @@ shared service is exercised by the tests and web smoke test.
   directories are skipped.
 - Test a group branch switch with local modifications to confirm autostash is
   restored; check `git stash list` is unchanged on success.
+- Test **Save to Git** with one and several dirty projects, including an empty
+  message and a project with no changes.
+- In browser mode, verify `/api/repositories/changes` and
+  `/api/repositories/commit`, then confirm the header, banner, help modal, and
+  row-level save action render correctly.
