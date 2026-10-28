@@ -3,7 +3,7 @@ filename: "_ai/backlog/reports/261028_1930__IMPLEMENTATION_REPORT__git_repo_mana
 title: "Report: git-repo-manager Multi-Git GUI Architecture and Implementation"
 createdAt: 2026-10-28 19:30
 updatedAt: 2026-10-28 20:05
-planFile: "_ai/backlog/active/261028_1930__IMPLEMENTATION_PLAN__git_repo_manager.md"
+planFile: "_ai/backlog/archive/261028_1930__IMPLEMENTATION_PLAN__git_repo_manager.md"
 specFile: ""
 project: "git-repo-manager"
 status: completed
