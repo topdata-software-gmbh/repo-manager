@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Shared `@topdata-software-gmbh/ui` and `@topdata-software-gmbh/design-tokens`
+  dependencies, token/kit CSS imports, and a Vitest migration smoke test.
+
+### Changed
+
+- `AddScanPathModal` and `ToastStack` now use the shared design-system
+  components and `--td-*` tokens instead of hand-rolled Tailwind markup.
+- Success and info toasts expire after 5 seconds and at most 3 are visible;
+  error toasts persist until dismissed. Previously errors auto-dismissed after
+  9 seconds and the stack was unbounded.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

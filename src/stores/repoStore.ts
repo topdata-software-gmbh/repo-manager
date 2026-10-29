@@ -215,7 +215,6 @@ export const useRepoStore = defineStore('repo', () => {
   function showToast(kind: ToastKind, title: string, message?: string): void {
     const id = ++nextToastId;
     toasts.value.push({ id, kind, title, message });
-    window.setTimeout(() => dismissToast(id), kind === 'error' ? 9000 : 5000);
   }
 
   function dismissToast(id: number): void {

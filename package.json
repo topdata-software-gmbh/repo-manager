@@ -9,10 +9,13 @@
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
-    "install:bin": "./scripts/install.sh"
+    "install:bin": "./scripts/install.sh",
+    "test": "vitest run"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
+    "@topdata-software-gmbh/design-tokens": "link:../topdata-design-system/packages/tokens",
+    "@topdata-software-gmbh/ui": "link:../topdata-design-system/packages/ui",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^2.2.0",
     "vue": "^3.4.30"
@@ -20,11 +23,14 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
     "@vitejs/plugin-vue": "^5.0.5",
+    "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.19",
+    "happy-dom": "^15",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.2",
     "vite": "^5.3.1",
+    "vitest": "^2.1.0",
     "vue-tsc": "^2.0.22"
   }
 }

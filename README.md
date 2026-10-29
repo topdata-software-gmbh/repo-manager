@@ -67,6 +67,23 @@ pnpm typecheck          # vue-tsc
 pnpm build              # type-check and build dist/
 ```
 
+## Design system
+
+The Vue UI uses the shared TopData design system from
+`../topdata-design-system`: `@topdata-software-gmbh/ui` for components and
+`@topdata-software-gmbh/design-tokens` for the generated `--td-*` CSS variables.
+`src/main.ts` imports the token CSS and the kit styles before the app stylesheet.
+
+This checkout currently links both packages from the sibling working tree. Build
+them once before starting the app:
+
+```bash
+(cd ../topdata-design-system && pnpm -r build)
+pnpm dev
+```
+
+Run the Vue tests with `pnpm run test`.
+
 Run the Rust tests:
 
 ```bash

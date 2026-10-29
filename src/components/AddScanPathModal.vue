@@ -1,26 +1,29 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { FolderPlus, Loader2, X } from 'lucide-vue-next';
+import { TdButton, TdFormField, TdInput, TdModal } from '@topdata-software-gmbh/ui';
 import { useRepoStore } from '../stores/repoStore';
 
 const store = useRepoStore();
 const path = ref('');
-const maxDepth = ref(3);
+const maxDepth = ref('3');
 const submitting = ref(false);
 
 watch(
   () => store.scanModalOpen,
   (open) => {
-    if (open) {
-      path.value = '';
-      maxDepth.value = 3;
-      submitting.value = false;
-    }
+    if (!open) return;
+    path.value = '';
+    maxDepth.value = '3';
+    submitting.value = false;
   },
 );
 
 function newId(prefix: string): string {
   return `${prefix}_${typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now()}`;
+}
+
+function onOpenChange(open: boolean): void {
+  if (!open) store.closeScanPathModal();
 }
 
 async function submit(): Promise<void> {
@@ -29,10 +32,12 @@ async function submit(): Promise<void> {
 
   submitting.value = true;
   try {
+    const parsed = Number(maxDepth.value);
+    const depth = Number.isFinite(parsed) ? Math.round(parsed) : 3;
     const added = await store.addScanPath({
       id: newId('scan'),
       path: value,
-      maxDepth: Math.min(Math.max(Math.round(maxDepth.value), 1), 12),
+      maxDepth: Math.min(Math.max(depth, 1), 12),
       enabled: true,
       excludePatterns: [],
     });
@@ -46,84 +51,60 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div
-    v-if="store.scanModalOpen"
-    class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-6 backdrop-blur-sm"
-    @click.self="store.closeScanPathModal"
+  <TdModal
+    :open="store.scanModalOpen"
+    title="Add project folder"
+    @update:open="onOpenChange"
   >
-    <form
-      class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
-      @submit.prevent="submit"
-    >
-      <header class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-        <div class="flex items-center gap-2">
-          <FolderPlus class="h-4 w-4 text-cyan-400" />
-          <h2 class="text-sm font-semibold text-slate-100">Add project folder</h2>
-        </div>
-        <button
-          type="button"
-          class="rounded p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-          @click="store.closeScanPathModal"
-        >
-          <X class="h-4 w-4" />
-        </button>
-      </header>
+    <form id="scan-path-form" class="scan-form" @submit.prevent="submit">
+      <TdFormField
+        label="Where are your projects?"
+        hint="Paste the folder where your themes live, for example ~/devel or /home/you/projects. We look inside it for Git projects and skip things like node_modules and build output."
+        required
+        v-slot="{ id, 'aria-describedby': describedBy, invalid, required }"
+      >
+        <TdInput
+          :id="id"
+          v-model="path"
+          type="text"
+          spellcheck="false"
+          placeholder="~/devel"
+          :aria-describedby="describedBy"
+          :invalid="invalid"
+          :required="required"
+          data-autofocus
+        />
+      </TdFormField>
 
-      <div class="space-y-4 px-5 py-4">
-        <div>
-          <label for="scan-path" class="mb-1.5 block text-xs font-medium text-slate-300">
-            Where are your projects?
-          </label>
-          <input
-            id="scan-path"
-            v-model="path"
-            type="text"
-            autofocus
-            spellcheck="false"
-            placeholder="~/devel"
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-500"
-          />
-          <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-            Paste the folder where your themes live, for example
-            <span class="font-mono text-slate-400">~/devel</span> or
-            <span class="font-mono text-slate-400">/home/you/projects</span>. We look inside it for
-            Git projects and skip things like <span class="font-mono">node_modules</span> and build
-            output.
-          </p>
-        </div>
-
-        <div class="w-40">
-          <label for="scan-depth" class="mb-1.5 block text-xs font-medium text-slate-300">
-            How deep to look
-          </label>
-          <input
-            id="scan-depth"
-            v-model.number="maxDepth"
-            type="number"
-            min="1"
-            max="12"
-            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 outline-none transition-colors focus:border-cyan-500"
-          />
-        </div>
+      <div class="scan-form__depth">
+        <TdFormField label="How deep to look" v-slot="{ id }">
+          <TdInput :id="id" v-model="maxDepth" type="number" min="1" max="12" />
+        </TdFormField>
       </div>
-
-      <footer class="flex items-center justify-end gap-2 border-t border-slate-800 px-5 py-3">
-        <button
-          type="button"
-          class="rounded-lg px-3 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-          @click="store.closeScanPathModal"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          :disabled="!path.trim() || submitting"
-          class="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Loader2 v-if="submitting" class="h-3.5 w-3.5 animate-spin" />
-          <span>Find my projects</span>
-        </button>
-      </footer>
     </form>
-  </div>
+
+    <template #footer>
+      <TdButton variant="ghost" @click="store.closeScanPathModal">Cancel</TdButton>
+      <TdButton
+        variant="primary"
+        type="submit"
+        form="scan-path-form"
+        :disabled="!path.trim() || submitting"
+        :loading="submitting"
+      >
+        Find my projects
+      </TdButton>
+    </template>
+  </TdModal>
 </template>
+
+<style scoped>
+.scan-form {
+  display: grid;
+  gap: var(--td-space-4);
+}
+
+.scan-form__depth {
+  max-width: 10rem;
+}
+</style>
