@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Success and info toasts expire after 5 seconds and at most 3 are visible;
   error toasts persist until dismissed. Previously errors auto-dismissed after
   9 seconds and the stack was unbounded.
+- Vite and the Tauri dev URL now use reserved port 5183 from `port-map` instead
+  of the shared 5173 default.
 
 ## [0.1.0] - 2026-10-28
 
