@@ -92,6 +92,7 @@ the explanation and the behaviour cannot drift apart.
 ```bash
 pnpm install
 pnpm tauri dev          # desktop window + Vite dev server
+pnpm start              # launch the installed app (see below)
 pnpm typecheck          # vue-tsc
 pnpm build              # type-check and build dist/
 ```
@@ -101,6 +102,11 @@ packages and opens two mprocs panes: the Rust web API on `127.0.0.1:8787` and
 Vite on `localhost:5183`. Open <http://localhost:5183>; press `q` in mprocs to
 stop both. Pass `--skip-kit-build` to skip the design-system build, or `--help`
 for details. It requires `pnpm`, `cargo`, and `mprocs`.
+
+`pnpm start` (or `./scripts/start.sh`) launches the installed
+`git-repo-manager` command, falling back to `~/.local/bin`. It does not build;
+run `pnpm install:bin` first. Any extra arguments are forwarded to the app, so
+`pnpm start -- --web --port 8788` starts web mode.
 
 ## Design system
 

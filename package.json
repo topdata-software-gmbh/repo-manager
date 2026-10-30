@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "install:bin": "./scripts/install.sh",
+    "start": "./scripts/start.sh",
     "test": "vitest run"
   },
   "dependencies": {
