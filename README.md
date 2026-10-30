@@ -81,6 +81,12 @@ pnpm typecheck          # vue-tsc
 pnpm build              # type-check and build dist/
 ```
 
+For browser development, `./scripts/dev-up.sh` builds the linked design-system
+packages and opens two mprocs panes: the Rust web API on `127.0.0.1:8787` and
+Vite on `localhost:5183`. Open <http://localhost:5183>; press `q` in mprocs to
+stop both. Pass `--skip-kit-build` to skip the design-system build, or `--help`
+for details. It requires `pnpm`, `cargo`, and `mprocs`.
+
 ## Design system
 
 The Vue UI uses the shared TopData design system from
