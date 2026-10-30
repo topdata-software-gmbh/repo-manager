@@ -1,7 +1,7 @@
 use crate::config::ConfigManager;
 use crate::models::{BranchInfo, FileChange, OperationResult, Repository};
 use crate::service;
-use crate::watcher::WatcherState;
+use crate::watcher::{EventBus, WatcherState};
 use tauri::State;
 
 #[tauri::command]
@@ -34,8 +34,12 @@ pub async fn list_repo_changes(path: String) -> Result<Vec<FileChange>, String> 
 }
 
 #[tauri::command]
-pub async fn commit_repo_changes(path: String, message: String) -> Result<OperationResult, String> {
-    Ok(service::commit_repo_changes(path, message).await)
+pub async fn commit_repo_changes(
+    path: String,
+    message: String,
+    event_bus: State<'_, EventBus>,
+) -> Result<OperationResult, String> {
+    Ok(service::commit_repo_changes(path, message, event_bus.inner()).await)
 }
 
 #[tauri::command]
@@ -43,8 +47,15 @@ pub async fn execute_group_action(
     repo_paths: Vec<String>,
     action: String,
     concurrency_limit: usize,
+    event_bus: State<'_, EventBus>,
 ) -> Result<Vec<OperationResult>, String> {
-    service::execute_group_action(repo_paths, action, concurrency_limit).await
+    service::execute_group_action(
+        repo_paths,
+        action,
+        concurrency_limit,
+        std::sync::Arc::new(event_bus.inner().clone()),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -52,8 +63,15 @@ pub async fn switch_group_branch(
     repo_paths: Vec<String>,
     branch: String,
     auto_stash: bool,
+    event_bus: State<'_, EventBus>,
 ) -> Result<Vec<OperationResult>, String> {
-    service::switch_group_branch(repo_paths, branch, auto_stash).await
+    service::switch_group_branch(
+        repo_paths,
+        branch,
+        auto_stash,
+        std::sync::Arc::new(event_bus.inner().clone()),
+    )
+    .await
 }
 
 #[tauri::command]

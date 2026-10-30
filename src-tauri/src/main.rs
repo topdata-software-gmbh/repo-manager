@@ -3,7 +3,10 @@ mod commands {
     pub mod git_commands;
 }
 mod config;
+mod events;
+mod git_log;
 mod git_runner;
+mod macros;
 mod models;
 mod scanner;
 mod service;
@@ -91,8 +94,15 @@ fn run_desktop(cli: Cli) {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut receiver = event_bus.subscribe();
-                while let Ok(repo_path) = receiver.recv().await {
-                    let _ = handle.emit("repo:fs-changed", repo_path);
+                while let Ok(event) = receiver.recv().await {
+                    match event {
+                        crate::events::AppEvent::FsChanged(repo_path) => {
+                            let _ = handle.emit("repo:fs-changed", repo_path);
+                        }
+                        crate::events::AppEvent::GitStep(step) => {
+                            let _ = handle.emit("git:step", step);
+                        }
+                    }
                 }
             });
             Ok(())

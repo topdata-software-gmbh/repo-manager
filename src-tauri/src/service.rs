@@ -1,4 +1,5 @@
 use crate::config::ConfigManager;
+use crate::git_log::{GitObserver, GitStepEvent};
 use crate::git_runner::GitRunner;
 use crate::models::{
     AppConfig, BranchInfo, FileChange, OnboardingState, OperationResult, RepoGroup, Repository,
@@ -131,8 +132,9 @@ pub async fn discover_repositories(
 
     let semaphore = Arc::new(Semaphore::new(INSPECTION_CONCURRENCY));
     let mut tasks = Vec::with_capacity(repo_paths.len());
+    let watch_paths = repo_paths.clone();
 
-    for repo_path in repo_paths.iter().cloned() {
+    for repo_path in repo_paths {
         let semaphore = Arc::clone(&semaphore);
         let group_ids = group_map
             .get(&repo_path.to_string_lossy().to_string())
@@ -145,15 +147,15 @@ pub async fn discover_repositories(
         }));
     }
 
-    let mut discovered = Vec::with_capacity(repo_paths.len());
+    let mut discovered = Vec::with_capacity(tasks.len());
     for task in tasks {
         if let Ok(repo) = task.await {
             discovered.push(repo);
         }
     }
-    discovered.sort_by(|a, b| a.path.to_lowercase().cmp(&b.path.to_lowercase()));
+    discovered.sort_by_key(|a| a.path.to_lowercase());
 
-    watcher.update(repo_paths);
+    watcher.update(watch_paths);
 
     Ok(discovered)
 }
@@ -166,14 +168,34 @@ pub async fn list_repo_changes(path: String) -> Vec<FileChange> {
     GitRunner::list_changes(&PathBuf::from(path)).await
 }
 
-pub async fn commit_repo_changes(path: String, message: String) -> OperationResult {
-    GitRunner::commit_changes(&PathBuf::from(path), &message).await
+pub async fn commit_repo_changes(
+    path: String,
+    message: String,
+    observer: &dyn GitObserver,
+) -> OperationResult {
+    GitRunner::commit_changes(&PathBuf::from(path), &message, observer).await
+}
+
+/// Rewrites every step of one repository into the run shared by a group action,
+/// so identical steps across clones fold into one card in the log.
+struct RunScopedObserver {
+    inner: Arc<dyn GitObserver>,
+    run_id: String,
+}
+
+impl GitObserver for RunScopedObserver {
+    fn on_step(&self, event: &GitStepEvent) {
+        let mut scoped = event.clone();
+        scoped.run_id = self.run_id.clone();
+        self.inner.on_step(&scoped);
+    }
 }
 
 pub async fn execute_group_action(
     repo_paths: Vec<String>,
     action: String,
     concurrency_limit: usize,
+    observer: Arc<dyn GitObserver>,
 ) -> Result<Vec<OperationResult>, String> {
     if !matches!(
         action.as_str(),
@@ -184,14 +206,21 @@ pub async fn execute_group_action(
 
     let limit = concurrency_limit.clamp(1, 32);
     let semaphore = Arc::new(Semaphore::new(limit));
+    let run_id = uuid::Uuid::new_v4().to_string();
     let mut tasks = Vec::with_capacity(repo_paths.len());
 
     for path in repo_paths {
         let semaphore = Arc::clone(&semaphore);
         let action = action.clone();
+        let observer = Arc::clone(&observer);
+        let run_id = run_id.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = semaphore.acquire_owned().await.ok();
-            GitRunner::execute_action(&PathBuf::from(path), &action).await
+            let scoped = RunScopedObserver {
+                inner: observer,
+                run_id,
+            };
+            GitRunner::execute_action(&PathBuf::from(path), &action, &scoped).await
         }));
     }
 
@@ -208,16 +237,24 @@ pub async fn switch_group_branch(
     repo_paths: Vec<String>,
     branch: String,
     auto_stash: bool,
+    observer: Arc<dyn GitObserver>,
 ) -> Result<Vec<OperationResult>, String> {
     let semaphore = Arc::new(Semaphore::new(6));
+    let run_id = uuid::Uuid::new_v4().to_string();
     let mut tasks = Vec::with_capacity(repo_paths.len());
 
     for path in repo_paths {
         let semaphore = Arc::clone(&semaphore);
         let branch = branch.clone();
+        let observer = Arc::clone(&observer);
+        let run_id = run_id.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = semaphore.acquire_owned().await.ok();
-            GitRunner::checkout_branch(&PathBuf::from(path), &branch, auto_stash).await
+            let scoped = RunScopedObserver {
+                inner: observer,
+                run_id,
+            };
+            GitRunner::checkout_branch(&PathBuf::from(path), &branch, auto_stash, &scoped).await
         }));
     }
 

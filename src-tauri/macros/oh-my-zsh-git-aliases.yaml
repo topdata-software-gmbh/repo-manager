@@ -1,0 +1,54 @@
+version: 1
+# Pinned extract of the plain-command aliases from oh-my-zsh's
+# plugins/git/git.plugin.zsh. Shell functions (the `!` forms) and targets that
+# contain pipes, command substitution, or chained commands are intentionally
+# omitted: only aliases a user could type as a single `git ...` command belong
+# here. Regenerating this file is a deliberate act.
+#
+# Destructive targets are never advertised: the denylist in macros.rs filters
+# them even if they appear below.
+aliases:
+  g: "git"
+  ga: "git add"
+  gaa: "git add --all"
+  gapa: "git add --patch"
+  gau: "git add --update"
+  gst: "git status"
+  gsb: "git status --short --branch"
+  gss: "git status --short"
+  gsn: "git status --untracked-files=no"
+  gd: "git diff"
+  gds: "git diff --staged"
+  gc: "git commit --verbose"
+  gcmsg: "git commit --message"
+  gca: "git commit --verbose --all"
+  gcam: "git commit --all --message"
+  gcf: "git config --list"
+  gfa: "git fetch --all --tags --prune --jobs=10"
+  gf: "git fetch"
+  gl: "git pull"
+  gpr: "git pull --rebase"
+  gp: "git push"
+  gpv: "git push --verbose"
+  gco: "git checkout"
+  gcb: "git checkout -b"
+  gcor: "git checkout --recurse-submodules"
+  gcm: "git checkout master"
+  gb: "git branch"
+  gba: "git branch --all"
+  gbm: "git branch --move"
+  gr: "git remote"
+  grv: "git remote --verbose"
+  gsh: "git show"
+  grf: "git reflog"
+  glo: "git log --oneline --decorate"
+  glog: "git log --oneline --decorate --graph"
+  glol: "git log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset'"
+  gsta: "git stash push"
+  gstp: "git stash pop"
+  gstl: "git stash list"
+  gstaa: "git stash apply"
+  gsts: "git stash show --text"
+  gwt: "git worktree"
+  gwta: "git worktree add"
+  gwtls: "git worktree list"

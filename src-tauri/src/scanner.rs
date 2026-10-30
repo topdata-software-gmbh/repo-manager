@@ -52,7 +52,7 @@ impl RepoScanner {
                 return false;
             }
 
-            if entry.file_type().map_or(false, |ft| ft.is_dir())
+            if entry.file_type().is_some_and(|ft| ft.is_dir())
                 && EXCLUDED_DIRS
                     .iter()
                     .any(|excluded| *excluded == name.as_ref())

@@ -1,9 +1,9 @@
+use crate::git_log::{GitObserver, GitStepEvent, GitStepStatus, RunContext};
+use crate::macros::{self, Guard, GuardState, MacroContext, Require};
 use crate::models::{FileChange, GitRepoState, OperationResult, RemoteInfo};
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use tokio::process::Command;
-
-const AUTOSTASH_MESSAGE: &str = "git-repo-manager-autostash";
 
 pub struct GitRunner;
 
@@ -227,7 +227,216 @@ impl GitRunner {
         }
     }
 
-    pub async fn commit_changes(repo_path: &Path, message: &str) -> OperationResult {
+    /// Whether the working tree has anything not yet recorded in Git.
+    pub(crate) async fn is_dirty(repo_path: &Path) -> bool {
+        Self::run_git_stdout(repo_path, &["status", "--porcelain=v1"])
+            .await
+            .is_some_and(|output| !output.trim().is_empty())
+    }
+
+    pub(crate) async fn has_upstream(repo_path: &Path) -> bool {
+        Self::run_git_stdout(
+            repo_path,
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+        )
+        .await
+        .is_some()
+    }
+
+    /// Executes a declared macro and reports every step transition.
+    pub async fn execute_macro(
+        repo_path: &Path,
+        macro_id: &str,
+        ctx: &MacroContext<'_>,
+        observer: &dyn GitObserver,
+    ) -> OperationResult {
+        let (macros, aliases) = match macros::template() {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                log::error!("git action template unusable: {error}");
+                return failure_result(
+                    repo_path,
+                    "Git actions are not available in this build. \
+                     Restart the application; if it persists, reinstall it.",
+                    String::new(),
+                );
+            }
+        };
+
+        let Some(mac) = macros.macros.get(macro_id) else {
+            return failure_result(
+                repo_path,
+                format!("This action is not available: {macro_id}"),
+                String::new(),
+            );
+        };
+
+        if mac.require == Require::OnBranch {
+            let branch = Self::get_current_branch(repo_path).await;
+            if branch == "HEAD" || branch.is_empty() {
+                return failure_result(
+                    repo_path,
+                    "You are not on a branch. Switch to a branch before using this action.",
+                    String::new(),
+                );
+            }
+        }
+
+        let mut guards = GuardState {
+            auto_stash: ctx.auto_stash,
+            ..GuardState::default()
+        };
+        if mac.steps.iter().any(|step| {
+            step.when
+                .iter()
+                .any(|guard| matches!(guard, Guard::Dirty | Guard::Clean))
+        }) {
+            guards.dirty = Self::is_dirty(repo_path).await;
+        }
+        if mac.steps.iter().any(|step| {
+            step.when
+                .iter()
+                .any(|guard| matches!(guard, Guard::HasUpstream | Guard::NoUpstream))
+        }) {
+            guards.has_upstream = Self::has_upstream(repo_path).await;
+        }
+
+        let run_id = uuid::Uuid::new_v4().to_string();
+        let run = RunContext {
+            run_id: &run_id,
+            repo_path,
+            macro_id,
+            title: &mac.title,
+        };
+        let mut output = String::new();
+        let mut failure: Option<String> = None;
+
+        for (index, step) in mac.steps.iter().enumerate() {
+            let args = match macros::render_args(&step.args, ctx) {
+                Ok(args) => args,
+                Err(error) => {
+                    return failure_result(repo_path, error, String::new());
+                }
+            };
+            let command = macros::render_command(repo_path, &args);
+            let alias = step.alias.clone().or_else(|| aliases.hint_for(&step.args));
+            let base = GitStepEvent::new(
+                &run,
+                index,
+                &step.comment,
+                &command,
+                GitStepStatus::Running,
+                alias,
+            );
+
+            if !guards.allows(&step.when) {
+                observer.on_step(&GitStepEvent {
+                    status: GitStepStatus::Skipped,
+                    ..base
+                });
+                continue;
+            }
+
+            observer.on_step(&base);
+            let started = std::time::Instant::now();
+            let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+
+            match Self::run_git_cmd(repo_path, &arg_refs).await {
+                Ok(result) if result.status.success() => {
+                    let duration_ms = started.elapsed().as_millis() as u64;
+                    let text = output_text(&result);
+                    if !text.is_empty() {
+                        if !output.is_empty() {
+                            output.push('\n');
+                        }
+                        output.push_str(&text);
+                    }
+                    if step.sets == macros::Effect::Stashed {
+                        guards.stashed = true;
+                    }
+                    observer.on_step(&GitStepEvent {
+                        status: GitStepStatus::Ok,
+                        duration_ms,
+                        ..base
+                    });
+                }
+                Ok(result) => {
+                    let duration_ms = started.elapsed().as_millis() as u64;
+                    let error = friendly_error(&error_text(&result));
+                    observer.on_step(&GitStepEvent {
+                        status: GitStepStatus::Failed,
+                        duration_ms,
+                        message: Some(error.clone()),
+                        ..base
+                    });
+                    failure = Some(error);
+                    Self::report_remaining_skipped(
+                        &run,
+                        &mac.steps[index + 1..],
+                        index + 1,
+                        observer,
+                    );
+                    break;
+                }
+                Err(error) => {
+                    let duration_ms = started.elapsed().as_millis() as u64;
+                    observer.on_step(&GitStepEvent {
+                        status: GitStepStatus::Failed,
+                        duration_ms,
+                        message: Some(error.clone()),
+                        ..base
+                    });
+                    failure = Some(error);
+                    Self::report_remaining_skipped(
+                        &run,
+                        &mac.steps[index + 1..],
+                        index + 1,
+                        observer,
+                    );
+                    break;
+                }
+            }
+        }
+
+        match failure {
+            Some(error) => failure_result(repo_path, error, output),
+            None => OperationResult {
+                repo_path: repo_path.to_string_lossy().to_string(),
+                success: true,
+                output,
+                error: None,
+            },
+        }
+    }
+
+    fn report_remaining_skipped(
+        run: &RunContext<'_>,
+        remaining: &[macros::GitStep],
+        offset: usize,
+        observer: &dyn GitObserver,
+    ) {
+        for (index, step) in remaining.iter().enumerate() {
+            observer.on_step(&GitStepEvent::new(
+                run,
+                offset + index,
+                &step.comment,
+                &macros::render_command(run.repo_path, &step.args),
+                GitStepStatus::Skipped,
+                step.alias.clone(),
+            ));
+        }
+    }
+
+    pub async fn commit_changes(
+        repo_path: &Path,
+        message: &str,
+        observer: &dyn GitObserver,
+    ) -> OperationResult {
         let message = message.trim();
         if message.is_empty() {
             return failure_result(
@@ -250,25 +459,20 @@ impl GitRunner {
             );
         }
 
-        match Self::run_git_cmd(repo_path, &["add", "-A"]).await {
-            Ok(output) if output.status.success() => {}
-            Ok(output) => {
-                return failure_result(
-                    repo_path,
-                    friendly_error(&error_text(&output)),
-                    output_text(&output),
-                )
-            }
-            Err(error) => return failure_result(repo_path, error, String::new()),
-        }
-
-        Self::run_operation(repo_path, &["commit", "-m", message]).await
+        let ctx = MacroContext {
+            message: Some(message),
+            branch: None,
+            repo_path,
+            auto_stash: true,
+        };
+        Self::execute_macro(repo_path, "commit", &ctx, observer).await
     }
 
     pub async fn checkout_branch(
         repo_path: &Path,
         branch: &str,
         auto_stash: bool,
+        observer: &dyn GitObserver,
     ) -> OperationResult {
         let current_branch = Self::get_current_branch(repo_path).await;
         if current_branch == branch {
@@ -280,176 +484,35 @@ impl GitRunner {
             };
         }
 
-        let mut stash_created = false;
+        let ctx = MacroContext {
+            message: None,
+            branch: Some(branch),
+            repo_path,
+            auto_stash,
+        };
+        Self::execute_macro(repo_path, "switch_branch", &ctx, observer).await
+    }
 
-        if auto_stash {
-            match Self::stash_if_needed(repo_path).await {
-                Ok(created) => stash_created = created,
-                Err(message) => {
-                    return failure_result(repo_path, message, String::new());
-                }
+    pub async fn execute_action(
+        repo_path: &Path,
+        action: &str,
+        observer: &dyn GitObserver,
+    ) -> OperationResult {
+        let macro_id = match action {
+            "fetch" | "pull" | "push" | "stash" | "stash_pop" => action,
+            other => {
+                return failure_result(repo_path, format!("Unknown action: {other}"), String::new())
             }
-        }
-
-        let mut result = Self::run_operation(repo_path, &["checkout", branch]).await;
-
-        if stash_created {
-            let restored = Self::restore_stash(repo_path).await;
-
-            if result.success {
-                if restored {
-                    result
-                        .output
-                        .push_str("\nYour changes were put back in the project folder.");
-                } else {
-                    result.success = false;
-                    result.error = Some(
-                        "The branch was switched, but your changes could not be put back \
-                         automatically. They are safe in the stash; use 'Bring back set-aside \
-                         changes' to restore them."
-                            .to_string(),
-                    );
-                }
-            } else if let Some(error) = result.error.as_mut() {
-                if restored {
-                    error.push_str("\nYour changes were put back in the project folder.");
-                } else {
-                    error.push_str(
-                        "\nYour changes are still saved in the stash. Use 'Bring back \
-                         set-aside changes' to restore them.",
-                    );
-                }
-            }
-        }
-
-        result
-    }
-
-    async fn stash_if_needed(repo_path: &Path) -> Result<bool, String> {
-        let status = Self::run_git_cmd(repo_path, &["status", "--porcelain=v1"]).await?;
-        if !status.status.success() {
-            return Err(friendly_error(&error_text(&status)));
-        }
-        if String::from_utf8_lossy(&status.stdout).trim().is_empty() {
-            return Ok(false);
-        }
-
-        let stash =
-            Self::run_git_cmd(repo_path, &["stash", "push", "-u", "-m", AUTOSTASH_MESSAGE]).await?;
-        if !stash.status.success() {
-            return Err(friendly_error(&error_text(&stash)));
-        }
-
-        let text = output_text(&stash);
-        Ok(text.contains("Saved working directory") || text.contains("WIP on"))
-    }
-
-    async fn restore_stash(repo_path: &Path) -> bool {
-        matches!(
-            Self::run_git_cmd(repo_path, &["stash", "pop"]).await,
-            Ok(output) if output.status.success()
-        )
-    }
-
-    async fn run_operation(repo_path: &Path, args: &[&str]) -> OperationResult {
-        match Self::run_git_cmd(repo_path, args).await {
-            Ok(output) if output.status.success() => OperationResult {
-                repo_path: repo_path.to_string_lossy().to_string(),
-                success: true,
-                output: output_text(&output),
-                error: None,
-            },
-            Ok(output) => failure_result(
-                repo_path,
-                friendly_error(&error_text(&output)),
-                output_text(&output),
-            ),
-            Err(error) => failure_result(repo_path, error, String::new()),
-        }
-    }
-
-    async fn pull_with_autostash(repo_path: &Path) -> OperationResult {
-        let stash_created = match Self::stash_if_needed(repo_path).await {
-            Ok(created) => created,
-            Err(message) => return failure_result(repo_path, message, String::new()),
         };
 
-        let mut result = Self::run_operation(repo_path, &["pull", "--ff-only"]).await;
-
-        if stash_created {
-            let restored = Self::restore_stash(repo_path).await;
-
-            if result.success {
-                if restored {
-                    result
-                        .output
-                        .push_str("\nYour changes were put back in the project folder.");
-                } else {
-                    result.success = false;
-                    result.error = Some(
-                        "The latest changes arrived, but your local changes could not be put \
-                         back automatically. They are safe in the stash; use 'Bring back \
-                         set-aside changes' to restore them."
-                            .to_string(),
-                    );
-                }
-            } else if let Some(error) = result.error.as_mut() {
-                if restored {
-                    error.push_str("\nYour changes were put back in the project folder.");
-                } else {
-                    error.push_str(
-                        "\nYour changes are still saved in the stash. Use 'Bring back \
-                         set-aside changes' to restore them.",
-                    );
-                }
-            }
-        }
-
-        result
-    }
-
-    async fn push_branch(repo_path: &Path) -> OperationResult {
         let branch = Self::get_current_branch(repo_path).await;
-        if branch == "HEAD" || branch.is_empty() {
-            return failure_result(
-                repo_path,
-                "You are not on a branch. Switch to a branch before sending changes.",
-                String::new(),
-            );
-        }
-
-        let has_upstream = Self::run_git_stdout(
+        let ctx = MacroContext {
+            message: None,
+            branch: Some(&branch),
             repo_path,
-            &[
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{upstream}",
-            ],
-        )
-        .await
-        .is_some();
-
-        if has_upstream {
-            Self::run_operation(repo_path, &["push"]).await
-        } else {
-            Self::run_operation(repo_path, &["push", "-u", "origin", &branch]).await
-        }
-    }
-
-    pub async fn execute_action(repo_path: &Path, action: &str) -> OperationResult {
-        match action {
-            "fetch" => Self::run_operation(repo_path, &["fetch", "--all", "--prune"]).await,
-            "pull" => Self::pull_with_autostash(repo_path).await,
-            "push" => Self::push_branch(repo_path).await,
-            "stash" => Self::run_operation(repo_path, &["stash", "push", "-u"]).await,
-            "stash_pop" => Self::run_operation(repo_path, &["stash", "pop"]).await,
-            _ => failure_result(
-                repo_path,
-                format!("Unknown action: {action}"),
-                String::new(),
-            ),
-        }
+            auto_stash: true,
+        };
+        Self::execute_macro(repo_path, macro_id, &ctx, observer).await
     }
 }
 
@@ -568,10 +631,11 @@ fn friendly_error(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git_log::NullObserver;
     use std::fs;
     use std::process::Command as StdCommand;
 
-    fn run_git(dir: &Path, args: &[&str]) {
+    pub(super) fn run_git(dir: &Path, args: &[&str]) {
         let status = StdCommand::new("git")
             .current_dir(dir)
             .args(args)
@@ -580,7 +644,7 @@ mod tests {
         assert!(status.success(), "git {:?} failed", args);
     }
 
-    fn init_repository(dir: &Path) {
+    pub(super) fn init_repository(dir: &Path) {
         fs::create_dir_all(dir).unwrap();
         run_git(dir, &["init", "-b", "main"]);
         run_git(dir, &["config", "user.name", "Test User"]);
@@ -619,7 +683,7 @@ mod tests {
         assert_eq!(GitRunner::resolve_git_dir(&repo), repo.join(".git"));
 
         run_git(&repo, &["branch", "feature"]);
-        let result = GitRunner::checkout_branch(&repo, "feature", true).await;
+        let result = GitRunner::checkout_branch(&repo, "feature", true, &NullObserver).await;
         assert!(result.success, "{:?}", result.error);
 
         let state = GitRunner::get_repo_state(&repo).await;
@@ -654,14 +718,14 @@ mod tests {
             .iter()
             .any(|change| change.path == "new.txt" && change.status == "new"));
 
-        let result = GitRunner::commit_changes(&repo, "update theme header").await;
+        let result = GitRunner::commit_changes(&repo, "update theme header", &NullObserver).await;
         assert!(result.success, "{:?}", result.error);
 
         let state = GitRunner::get_repo_state(&repo).await;
         assert!(state.is_clean);
         assert_eq!(state.head_commit_message, "update theme header");
 
-        let empty = GitRunner::commit_changes(&repo, "nothing").await;
+        let empty = GitRunner::commit_changes(&repo, "nothing", &NullObserver).await;
         assert!(!empty.success);
         assert!(empty.error.unwrap().contains("no changes"));
     }
@@ -698,7 +762,7 @@ mod tests {
         let changes = GitRunner::list_changes(&repo).await;
         assert!(changes.iter().any(|change| change.status == "conflict"));
 
-        let result = GitRunner::commit_changes(&repo, "merge feature").await;
+        let result = GitRunner::commit_changes(&repo, "merge feature", &NullObserver).await;
         assert!(!result.success);
         assert!(result.error.unwrap().contains("conflicts"));
     }
@@ -722,5 +786,63 @@ mod tests {
             GitRunner::resolve_git_dir(&repo),
             PathBuf::from("/tmp/example-git-dir")
         );
+    }
+}
+
+#[cfg(test)]
+mod macro_tests {
+    use super::*;
+    use crate::git_log::{GitObserver, GitStepEvent, GitStepStatus};
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Recording(Mutex<Vec<GitStepEvent>>);
+
+    impl GitObserver for Recording {
+        fn on_step(&self, event: &GitStepEvent) {
+            self.0.lock().unwrap().push(event.clone());
+        }
+    }
+
+    #[tokio::test]
+    async fn emits_comment_and_command_for_each_step() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        super::tests::init_repository(&repo);
+        std::fs::write(repo.join("tracked.txt"), "changed\n").unwrap();
+
+        let recorder = Recording::default();
+        let result = GitRunner::commit_changes(&repo, "update", &recorder).await;
+        assert!(result.success, "{:?}", result.error);
+
+        let events = recorder.0.lock().unwrap().clone();
+        let ok: Vec<_> = events
+            .iter()
+            .filter(|event| event.status == GitStepStatus::Ok)
+            .collect();
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[0].comment, "Mark every changed file for saving");
+        assert!(ok[0].command.starts_with("git -C "));
+        assert_eq!(ok[1].alias.as_deref(), Some("gcmsg"));
+    }
+
+    #[tokio::test]
+    async fn pull_marks_stash_steps_as_skipped_when_clean() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        super::tests::init_repository(&repo);
+
+        let recorder = Recording::default();
+        let result = GitRunner::execute_action(&repo, "pull", &recorder).await;
+        // No remote configured: the pull step fails, the stash steps never run.
+        assert!(!result.success);
+
+        let events = recorder.0.lock().unwrap().clone();
+        let skipped: Vec<_> = events
+            .iter()
+            .filter(|event| event.status == GitStepStatus::Skipped)
+            .collect();
+        assert_eq!(skipped.len(), 2);
+        assert!(skipped.iter().all(|event| event.command.contains("stash")));
     }
 }

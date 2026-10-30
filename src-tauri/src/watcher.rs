@@ -1,3 +1,5 @@
+use crate::events::AppEvent;
+use crate::git_log::{GitObserver, GitStepEvent};
 use crate::git_runner::GitRunner;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
@@ -14,7 +16,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Fan-out channel shared by desktop (Tauri events) and web (SSE) frontends.
 #[derive(Clone)]
 pub struct EventBus {
-    sender: broadcast::Sender<String>,
+    sender: broadcast::Sender<AppEvent>,
 }
 
 impl EventBus {
@@ -23,12 +25,18 @@ impl EventBus {
         Self { sender }
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<String> {
+    pub fn subscribe(&self) -> broadcast::Receiver<AppEvent> {
         self.sender.subscribe()
     }
 
-    pub fn publish(&self, repo_path: String) {
-        let _ = self.sender.send(repo_path);
+    pub fn publish_fs_changed(&self, repo_path: String) {
+        let _ = self.sender.send(AppEvent::FsChanged(repo_path));
+    }
+}
+
+impl GitObserver for EventBus {
+    fn on_step(&self, event: &GitStepEvent) {
+        let _ = self.sender.send(AppEvent::GitStep(event.clone()));
     }
 }
 
@@ -130,7 +138,7 @@ impl GitWatcher {
 
                     if should_emit {
                         last_emit.insert(key.clone(), now);
-                        event_bus.publish(key);
+                        event_bus.publish_fs_changed(key);
                     }
                 }
             }
@@ -179,7 +187,7 @@ fn spawn_poller(poll_roots: Vec<(PathBuf, PathBuf)>, event_bus: EventBus, stop: 
                 let current = git_fingerprint(git_dir);
                 if fingerprints.get(repo_path) != Some(&current) {
                     fingerprints.insert(repo_path.clone(), current);
-                    event_bus.publish(repo_path.to_string_lossy().to_string());
+                    event_bus.publish_fs_changed(repo_path.to_string_lossy().to_string());
                 }
             }
         }

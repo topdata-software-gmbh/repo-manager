@@ -166,19 +166,24 @@ async fn list_repo_changes(Json(request): Json<RepoRequest>) -> ApiResult<Vec<Fi
     Ok(Json(service::list_repo_changes(request.path).await))
 }
 
-async fn commit_repo_changes(Json(request): Json<CommitRequest>) -> ApiResult<OperationResult> {
+async fn commit_repo_changes(
+    State(state): State<Arc<WebState>>,
+    Json(request): Json<CommitRequest>,
+) -> ApiResult<OperationResult> {
     Ok(Json(
-        service::commit_repo_changes(request.path, request.message).await,
+        service::commit_repo_changes(request.path, request.message, &state.event_bus).await,
     ))
 }
 
 async fn execute_group_action(
+    State(state): State<Arc<WebState>>,
     Json(request): Json<GroupActionRequest>,
 ) -> ApiResult<Vec<OperationResult>> {
     service::execute_group_action(
         request.repo_paths,
         request.action,
         request.concurrency_limit,
+        Arc::new(state.event_bus.clone()),
     )
     .await
     .map(Json)
@@ -186,12 +191,18 @@ async fn execute_group_action(
 }
 
 async fn switch_group_branch(
+    State(state): State<Arc<WebState>>,
     Json(request): Json<SwitchBranchRequest>,
 ) -> ApiResult<Vec<OperationResult>> {
-    service::switch_group_branch(request.repo_paths, request.branch, request.auto_stash)
-        .await
-        .map(Json)
-        .map_err(api_error)
+    service::switch_group_branch(
+        request.repo_paths,
+        request.branch,
+        request.auto_stash,
+        Arc::new(state.event_bus.clone()),
+    )
+    .await
+    .map(Json)
+    .map_err(api_error)
 }
 
 async fn list_group_branches(Json(request): Json<BranchListRequest>) -> ApiResult<Vec<BranchInfo>> {
@@ -207,8 +218,13 @@ async fn repo_events(
     let receiver = state.event_bus.subscribe();
     let stream = BroadcastStream::new(receiver)
         .filter_map(|message| message.ok())
-        .map(|repo_path| {
-            Ok::<_, Infallible>(Event::default().event("repo-fs-changed").data(repo_path))
+        .filter_map(|event| match event {
+            crate::events::AppEvent::FsChanged(path) => Some(Ok::<_, Infallible>(
+                Event::default().event("repo-fs-changed").data(path),
+            )),
+            crate::events::AppEvent::GitStep(step) => serde_json::to_string(&step)
+                .ok()
+                .map(|json| Ok::<_, Infallible>(Event::default().event("git-step").data(json))),
         });
 
     Sse::new(stream).keep_alive(KeepAlive::default())

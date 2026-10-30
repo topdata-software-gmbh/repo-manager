@@ -1,0 +1,83 @@
+version: 1
+macros:
+  fetch:
+    title: "Checked for updates"
+    comment: "Look for new work on the server without changing your files"
+    steps:
+      - args: ["fetch", "--all", "--prune"]
+        comment: "Ask the server whether anything new exists"
+        alias: "gf"
+
+  pull:
+    title: "Got the latest"
+    comment: "Bring in the changes the others made"
+    steps:
+      - when: [dirty]
+        args: ["stash", "push", "-u", "-m", "git-repo-manager-autostash"]
+        comment: "Set your unfinished work aside for a moment"
+        sets: stashed
+        alias: "gsta"
+      - args: ["pull", "--ff-only"]
+        comment: "Download the new commits"
+        alias: "gl"
+      - when: [stashed]
+        args: ["stash", "pop"]
+        comment: "Put your work back"
+        alias: "gstp"
+
+  push:
+    title: "Sent changes"
+    comment: "Upload your saved checkpoints to the server"
+    require: on_branch
+    steps:
+      - when: [has_upstream]
+        args: ["push"]
+        comment: "Upload to the server version this project already follows"
+        alias: "gp"
+      - when: [no_upstream]
+        args: ["push", "-u", "origin", "{branch}"]
+        comment: "Upload and connect this project version to the server"
+
+  stash:
+    title: "Set changes aside"
+    comment: "Temporarily store unfinished work"
+    steps:
+      - args: ["stash", "push", "-u"]
+        comment: "Move your unsaved work to a safe place"
+        alias: "gsta"
+
+  stash_pop:
+    title: "Brought back set-aside changes"
+    comment: "Restore the last set of changes"
+    steps:
+      - args: ["stash", "pop"]
+        comment: "Put the most recent set-aside work back"
+        alias: "gstp"
+
+  commit:
+    title: "Saved changes"
+    comment: "Keep a checkpoint of your work"
+    steps:
+      - args: ["add", "-A"]
+        comment: "Mark every changed file for saving"
+        alias: "gaa"
+      - args: ["commit", "-m", "{message}"]
+        comment: "Store them under one description"
+        alias: "gcmsg"
+
+  switch_branch:
+    title: "Switched project version"
+    comment: "Move every project to the version you chose"
+    steps:
+      - when: [dirty, auto_stash]
+        args: ["stash", "push", "-u", "-m", "git-repo-manager-autostash"]
+        comment: "Set your unfinished work aside for a moment"
+        sets: stashed
+        alias: "gsta"
+      - args: ["checkout", "{branch}"]
+        comment: "Switch to the version you chose"
+        alias: "gco"
+      - when: [stashed]
+        args: ["stash", "pop"]
+        comment: "Put your work back"
+        alias: "gstp"
