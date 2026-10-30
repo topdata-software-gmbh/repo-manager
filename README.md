@@ -42,6 +42,10 @@ user's SSH agent, credential helpers, and GPG signing configuration.
 - Repository type detection for Shopware themes, plugins, and other projects,
   based only on local metadata.
 - Built-in help modal, next-step guidance banner, and friendly empty states.
+- **What Git did** drawer that explains each multi-step action as a commented
+  shell transcript, with gray `#` step comments, `git -C` commands, skipped-step
+  markers, and oh-my-zsh alias hints. Git actions themselves are declared in
+  `src-tauri/macros/git-actions.yaml`.
 - JSON configuration persisted atomically; no database.
 - Browser mode with optional bearer-token protection and server-sent events.
 
@@ -62,6 +66,17 @@ computer and resumed next time.
 
 The group toolbar wires the common actions; fetch, stash, and stash pop live under
 the **More** menu. The **All repos** page has no bulk actions.
+
+### What Git did
+
+Open the "…" menu in a group toolbar and choose **What Git did** to see the exact
+commands behind the last actions. Each action is one card; expand it to read the
+plain-language `#` comments and the real `git -C <project> …` commands, including
+the oh-my-zsh alias you could have typed instead. Nothing is stored: the list is
+kept for the current session only.
+
+The commands themselves are declared in `src-tauri/macros/git-actions.yaml`, so
+the explanation and the behaviour cannot drift apart.
 
 ## Requirements
 
@@ -297,7 +312,7 @@ All routes are under `/api` and require the token when one is configured.
 | POST | `/api/repositories/actions` | Fetch/pull/push/stash across repositories |
 | POST | `/api/repositories/switch-branch` | Switch a set of repositories to a branch |
 | POST | `/api/branches` | List local branches with repository counts |
-| GET | `/api/events` | Server-sent events (`repo-fs-changed`) |
+| GET | `/api/events` | Server-sent events (`repo-fs-changed`, `git-step`) |
 
 ## Architecture
 
@@ -310,12 +325,14 @@ Vue 3 UI (Pinia store, Tailwind)
                          service.rs (shared logic)
                          ├── config.rs      JSON persistence
                          ├── scanner.rs     discovery via ignore
-                         ├── git_runner.rs  git CLI + state parsing
+                         ├── git_runner.rs  git CLI + macro execution
+                         ├── macros.rs      YAML action templates
+                         ├── git_log.rs     typed step events
                          └── watcher.rs     notify + polling fallback
                                     │
-                         EventBus (tokio broadcast)
-                         ├── Tauri event: repo:fs-changed
-                         └── SSE event:   repo-fs-changed
+                         EventBus (tokio broadcast, AppEvent)
+                         ├── Tauri events: repo:fs-changed, git:step
+                         └── SSE events:   repo-fs-changed, git-step
 ```
 
 Thin command wrappers in `src-tauri/src/commands/` expose the service to Tauri;
@@ -333,12 +350,16 @@ src/                     Vue 3 application
 src-tauri/src/           Rust backend
   commands/              Tauri command wrappers
   config.rs              Atomic JSON configuration
-  git_runner.rs          Git CLI execution and state parsing
+  events.rs              Typed application event payload
+  git_log.rs             Git step event model and observer seam
+  git_runner.rs          Git CLI execution and macro execution
+  macros.rs              YAML action template parsing and validation
   scanner.rs             Repository discovery
   service.rs             Logic shared by desktop and web
   watcher.rs             Live updates and polling fallback
   web.rs                 axum server, SSE, token middleware
   main.rs                CLI and application entry point
+src-tauri/macros/        Declarative Git action and alias templates
 assets/                  Icon source
 scripts/install.sh       Build and install the release binary
 ```

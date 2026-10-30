@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shared `@topdata-software-gmbh/ui-kit-web-vue3` and
   `@topdata-software-gmbh/design-tokens` dependencies, token/kit CSS imports, and
   a Vitest migration smoke test.
+- "What Git did" drawer: a session-only, plain-language transcript of the commands
+  behind each Git action, with gray `#` step comments, `git -C` rendering,
+  skipped-step markers, and oh-my-zsh alias hints.
+- Git actions are declared once in `src-tauri/macros/git-actions.yaml` and executed
+  from that template, so the log wording and the behaviour share one source.
 
 ### Changed
 
@@ -39,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   9 seconds and the stack was unbounded.
 - Vite and the Tauri dev URL now use reserved port 5183 from `port-map` instead
   of the shared 5173 default.
+- The application event bus now carries typed `AppEvent` values; repository-change
+  notifications and Git step events share one SSE endpoint (`/api/events`) and one
+  frontend subscription.
 
 ## [0.1.0] - 2026-10-28
 
