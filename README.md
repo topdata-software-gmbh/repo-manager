@@ -19,6 +19,12 @@ user's SSH agent, credential helpers, and GPG signing configuration.
 
 - Recursive repository discovery with `.gitignore` awareness and dependency
   folder pruning (`node_modules`, `vendor`, `target`, caches).
+- Resumable first-run setup wizard: scan one folder deeply, optionally pre-select
+  projects by remote owner name, confirm discovered repositories, and keep
+  editable groups suggested from the folder layout.
+- Virtual **All repos** page with status, group, repository-type, and search
+  filters. It always reflects every discovered repository and offers row-level
+  actions only; bulk actions stay inside curated groups.
 - Multiple scan paths with per-path depth, enable/disable, and exclusions.
 - Logical groups with repository assignment, colors, synchronous branch
   switching, auto-stash on switch, and a configurable base branch.
@@ -33,21 +39,29 @@ user's SSH agent, credential helpers, and GPG signing configuration.
   pull, push, stash, stash pop).
 - Status matrix with plain-language badges, branch, ahead/behind, conflicts, and
   in-progress operation detection (merge, rebase, cherry-pick).
+- Repository type detection for Shopware themes, plugins, and other projects,
+  based only on local metadata.
 - Built-in help modal, next-step guidance banner, and friendly empty states.
 - JSON configuration persisted atomically; no database.
 - Browser mode with optional bearer-token protection and server-sent events.
 
 ## Everyday workflow
 
-1. **Add project folder** once. The app finds the Git projects inside it.
-2. Edit your files normally in your editor.
+1. On first run, the setup wizard asks for the folder where your projects live,
+   scans it deeply, and proposes groups for you to confirm.
+2. Edit your files normally in your editor. Use **All repos** to browse and filter
+   everything; open a group when you want to act on several projects at once.
 3. Click **Save to Git** at a checkpoint and describe what changed.
 4. Click **Get latest** before starting work and **Send changes** when finished.
 5. Use **How this works** in the app for a plain-English glossary and recovery
    guidance.
 
-The toolbar groups the common actions; fetch, stash, and stash pop live under the
-**More** menu.
+Setup can be reopened from the sidebar at any time. If you close it partway
+through, the current step, folder, owner names, and selection are kept on this
+computer and resumed next time.
+
+The group toolbar wires the common actions; fetch, stash, and stash pop live under
+the **More** menu. The **All repos** page has no bulk actions.
 
 ## Requirements
 
@@ -232,9 +246,21 @@ Example:
         "defaultBaseBranch": "main"
       }
     }
-  ]
+  ],
+  "onboarding": {
+    "completed": true,
+    "started": true,
+    "currentStep": 3,
+    "scanPath": "/srv/projects",
+    "ownerNames": ["acme"],
+    "groupingStyle": "topLevel",
+    "selectedRepoPaths": ["/srv/projects/api", "/srv/projects/worker"]
+  }
 }
 ```
+
+Older config files without the `onboarding` block keep working; the field is
+additive and defaults to a fresh, incomplete setup.
 
 Repository state itself is never persisted; it is read from Git on demand.
 
@@ -249,6 +275,7 @@ All routes are under `/api` and require the token when one is configured.
 | DELETE | `/api/scan-paths/{id}` | Remove a scan path |
 | POST | `/api/groups` | Add or update a group |
 | DELETE | `/api/groups/{id}` | Remove a group |
+| POST | `/api/onboarding` | Save resumable setup progress |
 | POST | `/api/repositories/discover` | Scan paths and return repository states |
 | POST | `/api/repositories/refresh` | Refresh one repository |
 | POST | `/api/repositories/changes` | List changed files for one repository |

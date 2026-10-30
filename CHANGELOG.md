@@ -9,11 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Resumable first-run setup wizard with deep folder scanning, optional remote
+  owner pre-selection, editable group suggestions, and a ready screen for the
+  Save/Get latest/Send workflow.
+- Virtual **All repos** page with status, group, type, and search filters, plus
+  row-level actions.
+- Repository kind detection for themes, plugins, and other repositories.
+- `save_onboarding_state` Tauri command and `POST /api/onboarding` endpoint.
 - Shared `@topdata-software-gmbh/ui` and `@topdata-software-gmbh/design-tokens`
   dependencies, token/kit CSS imports, and a Vitest migration smoke test.
 
 ### Changed
 
+- The sidebar's "All projects" entry is now "All repos" and opens a dedicated
+  browse page; group workspaces keep the bulk action toolbar.
 - `AddScanPathModal` and `ToastStack` now use the shared design-system
   components and `--td-*` tokens instead of hand-rolled Tailwind markup.
 - Success and info toasts expire after 5 seconds and at most 3 are visible;

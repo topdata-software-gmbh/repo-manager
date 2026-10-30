@@ -1,4 +1,10 @@
 project_id: repo-manager
+technologies:
+  bash: {}
+  rust: {}
+  tauri: {}
+  typescript: {}
+  vue: {}
 export:
   format: markdown
   path: _ai/conventions.md

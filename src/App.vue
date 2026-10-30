@@ -2,10 +2,12 @@
 import { onMounted, onUnmounted } from 'vue';
 import { subscribeToRepoChanges } from './lib/backend';
 import { useRepoStore } from './stores/repoStore';
+import AllReposPage from './components/AllReposPage.vue';
 import AddScanPathModal from './components/AddScanPathModal.vue';
 import GroupEditorModal from './components/GroupEditorModal.vue';
 import GuidanceBanner from './components/GuidanceBanner.vue';
 import HelpModal from './components/HelpModal.vue';
+import OnboardingWizard from './components/OnboardingWizard.vue';
 import RepoTable from './components/RepoTable.vue';
 import SaveChangesModal from './components/SaveChangesModal.vue';
 import Sidebar from './components/Sidebar.vue';
@@ -16,8 +18,7 @@ const store = useRepoStore();
 let unsubscribe: (() => void) | null = null;
 
 onMounted(async () => {
-  await store.loadConfig();
-  await store.scanRepositories();
+  await store.initialize();
 
   try {
     unsubscribe = await subscribeToRepoChanges((path) => {
@@ -28,24 +29,28 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => {
-  unsubscribe?.();
-});
+onUnmounted(() => unsubscribe?.());
 </script>
 
 <template>
   <div class="flex h-screen w-screen overflow-hidden bg-slate-900 font-sans text-slate-100">
-    <Sidebar />
-    <div class="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <Toolbar />
-      <GuidanceBanner />
-      <RepoTable />
-    </div>
+    <OnboardingWizard v-if="store.onboardingOpen" />
+    <template v-else>
+      <Sidebar />
+      <div class="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <AllReposPage v-if="store.selectedGroupId === 'all'" />
+        <template v-else>
+          <Toolbar />
+          <GuidanceBanner />
+          <RepoTable />
+        </template>
+      </div>
 
-    <GroupEditorModal />
-    <AddScanPathModal />
-    <SaveChangesModal />
-    <HelpModal />
+      <GroupEditorModal />
+      <AddScanPathModal />
+      <SaveChangesModal />
+      <HelpModal />
+    </template>
     <ToastStack />
   </div>
 </template>

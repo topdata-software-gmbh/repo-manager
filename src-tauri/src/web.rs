@@ -1,6 +1,7 @@
 use crate::config::ConfigManager;
 use crate::models::{
-    AppConfig, BranchInfo, FileChange, OperationResult, RepoGroup, Repository, ScanPath,
+    AppConfig, BranchInfo, FileChange, OnboardingState, OperationResult, RepoGroup, Repository,
+    ScanPath,
 };
 use crate::service;
 use crate::watcher::{EventBus, WatcherState};
@@ -127,6 +128,15 @@ async fn delete_repo_group(
     AxumPath(group_id): AxumPath<String>,
 ) -> ApiResult<AppConfig> {
     service::delete_repo_group(state.config.as_ref(), group_id)
+        .map(Json)
+        .map_err(api_error)
+}
+
+async fn save_onboarding_state(
+    State(state): State<Arc<WebState>>,
+    Json(onboarding): Json<OnboardingState>,
+) -> ApiResult<AppConfig> {
+    service::save_onboarding_state(state.config.as_ref(), onboarding)
         .map(Json)
         .map_err(api_error)
 }
@@ -287,6 +297,7 @@ async fn serve(options: WebOptions) -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/scan-paths/{id}", delete(remove_scan_path))
         .route("/api/groups", post(save_repo_group))
         .route("/api/groups/{id}", delete(delete_repo_group))
+        .route("/api/onboarding", post(save_onboarding_state))
         .route("/api/repositories/discover", post(discover_repositories))
         .route("/api/repositories/refresh", post(refresh_repository))
         .route("/api/repositories/changes", post(list_repo_changes))

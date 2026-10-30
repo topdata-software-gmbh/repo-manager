@@ -2,6 +2,7 @@ import type {
   AppConfig,
   BranchInfo,
   FileChange,
+  OnboardingState,
   OperationResult,
   RepoGroup,
   Repository,
@@ -122,6 +123,16 @@ export const backend = {
       { groupId },
       'DELETE',
       `/api/groups/${encodeURIComponent(groupId)}`,
+    );
+  },
+
+  saveOnboardingState(onboarding: OnboardingState): Promise<AppConfig> {
+    return request<AppConfig>(
+      'save_onboarding_state',
+      { onboarding },
+      'POST',
+      '/api/onboarding',
+      onboarding,
     );
   },
 

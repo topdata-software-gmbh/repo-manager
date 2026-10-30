@@ -9,6 +9,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Sparkles,
   X,
 } from 'lucide-vue-next';
 import { backendMode } from '../lib/backend';
@@ -58,7 +59,7 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         >
           <span class="flex items-center gap-2">
             <Layers class="h-3.5 w-3.5" />
-            <span>All projects</span>
+            <span>All repos</span>
           </span>
           <span class="font-mono text-[10px] text-slate-500">{{ store.repositories.length }}</span>
         </button>
@@ -176,6 +177,14 @@ async function removeScanPath(id: string, path: string): Promise<void> {
         <Loader2 v-if="store.isScanning" class="h-3.5 w-3.5 animate-spin" />
         <RefreshCw v-else class="h-3.5 w-3.5" />
         <span>Look for new projects</span>
+      </button>
+      <button
+        class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-900 hover:text-slate-300"
+        title="Reopen the setup wizard"
+        @click="store.openOnboarding(true)"
+      >
+        <Sparkles class="h-3 w-3" />
+        <span>Setup</span>
       </button>
       <button
         class="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] text-slate-500 transition-colors hover:bg-slate-900 hover:text-slate-300"

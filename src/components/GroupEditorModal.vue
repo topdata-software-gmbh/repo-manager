@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { Layers, Loader2, Trash2, X } from 'lucide-vue-next';
 import { useRepoStore } from '../stores/repoStore';
+import { GROUP_COLORS } from '../lib/groupDefaults';
 import type { RepoGroup } from '../types/domain';
 
 const store = useRepoStore();
@@ -16,7 +17,7 @@ const submitting = ref(false);
 const deleting = ref(false);
 const error = ref('');
 
-const palette = ['#38bdf8', '#22c55e', '#f59e0b', '#f43f5e', '#a855f7', '#14b8a6'];
+const palette = GROUP_COLORS;
 
 const isEditing = computed(() => store.editingGroup !== null);
 const allSelected = computed(

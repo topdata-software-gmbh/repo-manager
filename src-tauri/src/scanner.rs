@@ -1,5 +1,5 @@
 use crate::git_runner::GitRunner;
-use crate::models::{GitRepoState, Repository};
+use crate::models::{GitRepoState, RepoKind, Repository};
 use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -93,10 +93,12 @@ impl RepoScanner {
                 is_accessible: false,
                 state: GitRepoState::default(),
                 group_ids,
+                kind: RepoKind::Other,
             };
         }
 
         let state = GitRunner::get_repo_state(repo_path).await;
+        let kind = detect_repository_kind(repo_path);
 
         Repository {
             id,
@@ -105,8 +107,28 @@ impl RepoScanner {
             is_accessible: true,
             state,
             group_ids,
+            kind,
         }
     }
+}
+
+fn detect_repository_kind(repo_path: &Path) -> RepoKind {
+    if repo_path.join("src/Resources/theme.json").is_file() {
+        return RepoKind::Theme;
+    }
+
+    let composer_path = repo_path.join("composer.json");
+    if let Ok(raw) = std::fs::read_to_string(composer_path) {
+        if let Ok(composer) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if composer.get("type").and_then(|value| value.as_str())
+                == Some("shopware-platform-plugin")
+            {
+                return RepoKind::Plugin;
+            }
+        }
+    }
+
+    RepoKind::Other
 }
 
 fn repository_id(path: &str) -> String {
@@ -148,5 +170,29 @@ mod tests {
             .any(|p| p.starts_with(root.join("node_modules"))));
         assert!(!found.iter().any(|p| p.starts_with(root.join("vendor"))));
         assert!(!found.contains(&root.join("a/b/c/d/e")));
+    }
+
+    #[test]
+    fn detects_theme_plugin_and_other_repositories() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let theme = temp.path().join("theme");
+        fs::create_dir_all(theme.join("src/Resources")).unwrap();
+        fs::write(theme.join("src/Resources/theme.json"), "{}").unwrap();
+
+        let plugin = temp.path().join("plugin");
+        fs::create_dir_all(&plugin).unwrap();
+        fs::write(
+            plugin.join("composer.json"),
+            r#"{"type":"shopware-platform-plugin"}"#,
+        )
+        .unwrap();
+
+        let other = temp.path().join("other");
+        fs::create_dir_all(&other).unwrap();
+
+        assert_eq!(detect_repository_kind(&theme), RepoKind::Theme);
+        assert_eq!(detect_repository_kind(&plugin), RepoKind::Plugin);
+        assert_eq!(detect_repository_kind(&other), RepoKind::Other);
     }
 }

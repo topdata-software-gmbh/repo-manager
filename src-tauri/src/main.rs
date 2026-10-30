@@ -90,6 +90,7 @@ fn run_desktop(cli: Cli) {
             remove_scan_path,
             save_repo_group,
             delete_repo_group,
+            save_onboarding_state,
             discover_repositories,
             refresh_repository,
             list_repo_changes,

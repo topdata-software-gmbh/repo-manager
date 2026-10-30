@@ -13,6 +13,19 @@ export interface RemoteInfo {
 
 export type OperationState = 'idle' | 'merging' | 'rebasing' | 'cherry-picking';
 
+export type RepoKind = 'theme' | 'plugin' | 'other';
+export type GroupingStyle = 'topLevel' | 'single';
+
+export interface OnboardingState {
+  completed: boolean;
+  started: boolean;
+  currentStep: number;
+  scanPath: string | null;
+  ownerNames: string[];
+  groupingStyle: GroupingStyle;
+  selectedRepoPaths: string[];
+}
+
 export interface GitRepoState {
   currentBranch: string;
   isDetachedHead: boolean;
@@ -36,6 +49,7 @@ export interface Repository {
   isAccessible: boolean;
   state: GitRepoState;
   groupIds: string[];
+  kind: RepoKind;
 }
 
 export interface GroupSettings {
@@ -55,6 +69,7 @@ export interface RepoGroup {
 export interface AppConfig {
   scanPaths: ScanPath[];
   groups: RepoGroup[];
+  onboarding: OnboardingState;
 }
 
 export interface OperationResult {

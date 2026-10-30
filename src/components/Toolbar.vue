@@ -95,7 +95,7 @@ async function runAction(
   >
     <div class="flex min-w-0 flex-wrap items-center gap-3">
       <span class="max-w-48 truncate text-sm font-semibold text-slate-100">
-        {{ store.currentGroup ? store.currentGroup.name : 'All projects' }}
+        {{ store.currentGroup ? store.currentGroup.name : 'Project group' }}
       </span>
       <span class="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
         {{ store.filteredRepositories.length }}

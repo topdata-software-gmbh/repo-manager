@@ -148,4 +148,19 @@ mod tests {
         let group_map = reloaded.group_ids_by_path().unwrap();
         assert_eq!(group_map["/tmp/repos/api"], vec!["group-1".to_string()]);
     }
+
+    #[test]
+    fn loads_legacy_config_without_onboarding() {
+        let temp = tempfile::tempdir().unwrap();
+        let config_path = temp.path().join("config.json");
+        fs::write(&config_path, r#"{"scanPaths":[],"groups":[]}"#).unwrap();
+
+        let manager = ConfigManager::from_path(config_path);
+        let snapshot = manager.snapshot().unwrap();
+
+        assert!(!snapshot.onboarding.started);
+        assert!(!snapshot.onboarding.completed);
+        assert_eq!(snapshot.onboarding.current_step, 0);
+        assert_eq!(snapshot.onboarding.owner_names, Vec::<String>::new());
+    }
 }

@@ -1,5 +1,5 @@
 use crate::config::ConfigManager;
-use crate::models::{AppConfig, RepoGroup, ScanPath};
+use crate::models::{AppConfig, OnboardingState, RepoGroup, ScanPath};
 use crate::service;
 use tauri::State;
 
@@ -35,4 +35,12 @@ pub fn delete_repo_group(
     state: State<'_, ConfigManager>,
 ) -> Result<AppConfig, String> {
     service::delete_repo_group(state.inner(), group_id)
+}
+
+#[tauri::command]
+pub fn save_onboarding_state(
+    onboarding: OnboardingState,
+    state: State<'_, ConfigManager>,
+) -> Result<AppConfig, String> {
+    service::save_onboarding_state(state.inner(), onboarding)
 }

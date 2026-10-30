@@ -1,9 +1,26 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { backend } from '../lib/backend';
+import {
+  defaultOnboardingState,
+  normalizeOwnerNames,
+  ownedRepoPaths,
+  shouldShowOnboarding as configNeedsOnboarding,
+  suggestGroups,
+  type SuggestedGroup,
+} from '../lib/onboarding';
+import {
+  countByStatus,
+  emptyAllReposFilters,
+  filterAllRepos,
+  type AllReposFilters,
+  type RepoStatusFilter,
+} from '../lib/repoFilters';
 import type {
   AppConfig,
   BranchInfo,
+  GroupingStyle,
+  OnboardingState,
   OperationResult,
   RepoGroup,
   Repository,
@@ -32,8 +49,23 @@ export interface GroupInsight {
 let nextToastId = 0;
 let branchRequestId = 0;
 
+const ACTION_LABELS: Record<
+  'fetch' | 'pull' | 'push' | 'stash' | 'stash_pop',
+  string
+> = {
+  fetch: 'Check for updates',
+  pull: 'Get latest',
+  push: 'Send changes',
+  stash: 'Set aside changes',
+  stash_pop: 'Bring back set-aside changes',
+};
+
 export const useRepoStore = defineStore('repo', () => {
-  const config = ref<AppConfig>({ scanPaths: [], groups: [] });
+  const config = ref<AppConfig>({
+    scanPaths: [],
+    groups: [],
+    onboarding: defaultOnboardingState(),
+  });
   const repositories = ref<Repository[]>([]);
   const selectedGroupId = ref<string>('all');
   const isLoading = ref(false);
@@ -48,6 +80,23 @@ export const useRepoStore = defineStore('repo', () => {
   const groupEditorOpen = ref(false);
   const editingGroup = ref<RepoGroup | null>(null);
 
+  const configLoaded = ref(false);
+  const onboardingOpen = ref(false);
+  const onboardingReplay = ref(false);
+  const onboardingStep = ref(0);
+  const onboardingError = ref('');
+  const onboardingSearch = ref('');
+  const onboardingDraft = ref({
+    scanPath: '',
+    ownerNames: '',
+    groupingStyle: 'topLevel' as GroupingStyle,
+    maxDepth: 8,
+  });
+  const onboardingSelectedPaths = ref<string[]>([]);
+  const onboardingGroups = ref<Array<SuggestedGroup & { included: boolean }>>([]);
+  const onboardingPendingGroups = ref<RepoGroup[]>([]);
+  const allReposFilters = ref<AllReposFilters>(emptyAllReposFilters());
+
   const currentGroup = computed(() => {
     if (selectedGroupId.value === 'all') return null;
     return config.value.groups.find((group) => group.id === selectedGroupId.value) ?? null;
@@ -59,6 +108,37 @@ export const useRepoStore = defineStore('repo', () => {
     if (!group) return [];
     return repositories.value.filter((repo) => group.repoPaths.includes(repo.path));
   });
+
+  const shouldShowOnboarding = computed(
+    () => configLoaded.value && configNeedsOnboarding(config.value),
+  );
+
+  const onboardingSelectedRepositories = computed(() =>
+    repositories.value.filter((repo) =>
+      onboardingSelectedPaths.value.includes(repo.path),
+    ),
+  );
+
+  const allReposFiltered = computed(() =>
+    filterAllRepos(repositories.value, allReposFilters.value, config.value.groups),
+  );
+
+  const allReposBase = computed(() =>
+    filterAllRepos(
+      repositories.value,
+      { ...allReposFilters.value, statuses: [] },
+      config.value.groups,
+    ),
+  );
+
+  const allReposStatusCounts = computed(() => ({
+    needsAttention: countByStatus(allReposBase.value, 'needsAttention'),
+    changesNotSaved: countByStatus(allReposBase.value, 'changesNotSaved'),
+    updatesAvailable: countByStatus(allReposBase.value, 'updatesAvailable'),
+    toSend: countByStatus(allReposBase.value, 'toSend'),
+    upToDate: countByStatus(allReposBase.value, 'upToDate'),
+    localOnly: countByStatus(allReposBase.value, 'localOnly'),
+  }));
 
   const commonBranches = computed(() => {
     const list = filteredRepositories.value;
@@ -255,10 +335,20 @@ export const useRepoStore = defineStore('repo', () => {
     );
   }
 
+  async function initialize(skipOnboarding = false): Promise<void> {
+    await loadConfig();
+    await scanRepositories();
+    if (!skipOnboarding && shouldShowOnboarding.value) {
+      await openOnboarding(false);
+    }
+  }
+
   async function loadConfig(): Promise<void> {
     try {
       config.value = await backend.getConfig();
+      configLoaded.value = true;
     } catch (error) {
+      configLoaded.value = false;
       showToast('error', 'Could not load configuration', String(error));
     }
   }
@@ -338,22 +428,31 @@ export const useRepoStore = defineStore('repo', () => {
     const paths = filteredRepositories.value.map((repo) => repo.path);
     if (paths.length === 0) return;
 
-    const actionLabel: Record<typeof action, string> = {
-      fetch: 'Check for updates',
-      pull: 'Get latest',
-      push: 'Send changes',
-      stash: 'Set aside changes',
-      stash_pop: 'Bring back set-aside changes',
-    };
-
     isLoading.value = true;
     try {
       const results = await backend.executeGroupAction(paths, action, 5);
       await Promise.all(paths.map((path) => refreshSingleRepo(path)));
       await loadGroupBranches();
-      summarizeResults(results, actionLabel[action]);
+      summarizeResults(results, ACTION_LABELS[action]);
     } catch (error) {
-      showToast('error', `${actionLabel[action]} failed`, String(error));
+      showToast('error', `${ACTION_LABELS[action]} failed`, String(error));
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function runRepoAction(
+    path: string,
+    action: 'fetch' | 'pull' | 'push' | 'stash' | 'stash_pop',
+  ): Promise<void> {
+    isLoading.value = true;
+    try {
+      const results = await backend.executeGroupAction([path], action, 1);
+      await refreshSingleRepo(path);
+      await loadGroupBranches();
+      summarizeResults(results, ACTION_LABELS[action]);
+    } catch (error) {
+      showToast('error', `${ACTION_LABELS[action]} failed`, String(error));
     } finally {
       isLoading.value = false;
     }
@@ -417,6 +516,9 @@ export const useRepoStore = defineStore('repo', () => {
       if (selectedGroupId.value === groupId) {
         selectedGroupId.value = 'all';
       }
+      if (allReposFilters.value.groupId === groupId) {
+        allReposFilters.value.groupId = 'all';
+      }
       await loadGroupBranches();
       showToast('success', 'Group deleted');
     } catch (error) {
@@ -448,6 +550,216 @@ export const useRepoStore = defineStore('repo', () => {
 
   async function toggleScanPath(scanPath: ScanPath): Promise<void> {
     await addScanPath({ ...scanPath, enabled: !scanPath.enabled });
+  }
+
+  async function openOnboarding(replay: boolean): Promise<void> {
+    const onboarding = config.value.onboarding ?? defaultOnboardingState();
+    onboardingReplay.value = replay || onboarding.completed;
+    onboardingStep.value = replay ? 0 : Math.min(onboarding.currentStep, 2);
+    onboardingDraft.value = {
+      scanPath: onboarding.scanPath ?? config.value.scanPaths[0]?.path ?? '',
+      ownerNames: onboarding.ownerNames.join(', '),
+      groupingStyle: onboarding.groupingStyle ?? 'topLevel',
+      maxDepth: config.value.scanPaths[0]?.maxDepth ?? 8,
+    };
+    onboardingSelectedPaths.value = onboarding.selectedRepoPaths.filter((path) =>
+      repositories.value.some((repo) => repo.path === path),
+    );
+    if (onboardingSelectedPaths.value.length === 0) {
+      onboardingStep.value = Math.min(onboardingStep.value, 1);
+    }
+    onboardingGroups.value =
+      onboardingStep.value >= 2
+        ? suggestGroups(
+            onboardingSelectedPaths.value,
+            onboardingDraft.value.scanPath,
+            onboardingDraft.value.groupingStyle,
+          ).map((group) => ({ ...group, included: true }))
+        : [];
+    onboardingPendingGroups.value = [];
+    onboardingError.value = '';
+    onboardingSearch.value = '';
+    onboardingOpen.value = true;
+    await persistOnboardingProgress();
+  }
+
+  async function persistOnboardingProgress(completed = false): Promise<void> {
+    const current = config.value.onboarding ?? defaultOnboardingState();
+    const state: OnboardingState = {
+      completed: completed || (onboardingReplay.value && current.completed),
+      started: true,
+      currentStep: onboardingStep.value,
+      scanPath: onboardingDraft.value.scanPath.trim() || null,
+      ownerNames: normalizeOwnerNames(onboardingDraft.value.ownerNames),
+      groupingStyle: onboardingDraft.value.groupingStyle,
+      selectedRepoPaths: [...onboardingSelectedPaths.value],
+    };
+
+    try {
+      config.value = await backend.saveOnboardingState(state);
+    } catch (error) {
+      showToast('error', 'Could not save setup progress', String(error));
+      throw error;
+    }
+  }
+
+  async function scanOnboardingFolder(): Promise<boolean> {
+    const path = onboardingDraft.value.scanPath.trim();
+    if (!path) {
+      onboardingError.value = 'Choose the folder where your projects live.';
+      return false;
+    }
+
+    onboardingError.value = '';
+    const rawDepth = Number(onboardingDraft.value.maxDepth);
+    const maxDepth = Number.isFinite(rawDepth)
+      ? Math.min(Math.max(Math.round(rawDepth), 1), 12)
+      : 8;
+    onboardingDraft.value.maxDepth = maxDepth;
+    const added = await addScanPath({
+      id: 'onboarding-main',
+      path,
+      maxDepth,
+      enabled: true,
+      excludePatterns: [],
+    });
+    if (!added) {
+      onboardingError.value = 'That folder could not be scanned. Check the path.';
+      return false;
+    }
+
+    const savedScanPath = config.value.scanPaths.find(
+      (scanPath) => scanPath.id === 'onboarding-main',
+    );
+    if (savedScanPath) {
+      onboardingDraft.value.scanPath = savedScanPath.path;
+    }
+
+    onboardingSelectedPaths.value = ownedRepoPaths(
+      repositories.value,
+      normalizeOwnerNames(onboardingDraft.value.ownerNames),
+    );
+    await persistOnboardingProgress();
+    return true;
+  }
+
+  function toggleOnboardingRepo(path: string): void {
+    onboardingSelectedPaths.value = onboardingSelectedPaths.value.includes(path)
+      ? onboardingSelectedPaths.value.filter((item) => item !== path)
+      : [...onboardingSelectedPaths.value, path];
+  }
+
+  function selectAllOnboardingRepos(paths: string[]): void {
+    onboardingSelectedPaths.value = [...new Set(paths)];
+  }
+
+  function clearOnboardingSelection(): void {
+    onboardingSelectedPaths.value = [];
+  }
+
+  async function goToOnboardingStep(step: number): Promise<void> {
+    if (step === 2 && onboardingSelectedPaths.value.length === 0) {
+      onboardingError.value = 'Choose at least one project to continue.';
+      return;
+    }
+
+    if (step === 2) {
+      onboardingGroups.value = suggestGroups(
+        onboardingSelectedPaths.value,
+        onboardingDraft.value.scanPath,
+        onboardingDraft.value.groupingStyle,
+      ).map((group) => ({ ...group, included: true }));
+    }
+
+    onboardingError.value = '';
+    onboardingStep.value = step;
+    await persistOnboardingProgress();
+  }
+
+  function updateOnboardingGroupName(index: number, name: string): void {
+    const group = onboardingGroups.value[index];
+    if (group) group.name = name;
+  }
+
+  function toggleOnboardingGroup(index: number): void {
+    const group = onboardingGroups.value[index];
+    if (group) group.included = !group.included;
+  }
+
+  async function prepareOnboardingGroups(
+    groupsToCreate: RepoGroup[],
+  ): Promise<boolean> {
+    const names = groupsToCreate.map((group) => group.name.trim().toLowerCase());
+    if (names.length === 0) {
+      onboardingError.value = 'Keep at least one group to continue.';
+      return false;
+    }
+    if (names.some((name) => name.length === 0)) {
+      onboardingError.value = 'Give every included group a name.';
+      return false;
+    }
+    if (new Set(names).size !== names.length) {
+      onboardingError.value = 'Give each group a different name.';
+      return false;
+    }
+
+    onboardingPendingGroups.value = groupsToCreate;
+    onboardingError.value = '';
+    onboardingStep.value = 3;
+    await persistOnboardingProgress();
+    return true;
+  }
+
+  async function completeOnboarding(openGroupId: string | null): Promise<void> {
+    const groupsToCreate = onboardingPendingGroups.value;
+    if (groupsToCreate.length === 0) {
+      onboardingError.value = 'Confirm at least one group before finishing.';
+      onboardingStep.value = 2;
+      return;
+    }
+
+    try {
+      for (const group of groupsToCreate) {
+        config.value = await backend.saveRepoGroup(group);
+      }
+      await persistOnboardingProgress(true);
+      onboardingOpen.value = false;
+      await scanRepositories();
+      if (openGroupId) {
+        selectGroup(openGroupId);
+      } else {
+        selectedGroupId.value = 'all';
+      }
+      const count = groupsToCreate.length;
+      showToast(
+        'success',
+        'Setup complete',
+        `${count} ${count === 1 ? 'group' : 'groups'} ready.`,
+      );
+      onboardingPendingGroups.value = [];
+    } catch (error) {
+      onboardingError.value = String(error);
+      showToast('error', 'Could not finish setup', String(error));
+    }
+  }
+
+  async function closeOnboarding(): Promise<void> {
+    try {
+      await persistOnboardingProgress();
+    } finally {
+      onboardingOpen.value = false;
+    }
+  }
+
+  function toggleAllReposStatus(status: RepoStatusFilter): void {
+    const statuses = allReposFilters.value.statuses;
+    allReposFilters.value.statuses = statuses.includes(status)
+      ? statuses.filter((item) => item !== status)
+      : [...statuses, status];
+  }
+
+  function clearAllReposFilters(): void {
+    allReposFilters.value = emptyAllReposFilters();
   }
 
   function selectGroup(groupId: string): void {
@@ -497,6 +809,22 @@ export const useRepoStore = defineStore('repo', () => {
     selectedGroupId,
     currentGroup,
     filteredRepositories,
+    shouldShowOnboarding,
+    onboardingSelectedRepositories,
+    allReposFiltered,
+    allReposBase,
+    allReposStatusCounts,
+    configLoaded,
+    onboardingOpen,
+    onboardingReplay,
+    onboardingStep,
+    onboardingError,
+    onboardingSearch,
+    onboardingDraft,
+    onboardingSelectedPaths,
+    onboardingGroups,
+    onboardingPendingGroups,
+    allReposFilters,
     commonBranches,
     synchronizedBranch,
     cleanRepositoryCount,
@@ -514,11 +842,13 @@ export const useRepoStore = defineStore('repo', () => {
     helpModalOpen,
     groupEditorOpen,
     editingGroup,
+    initialize,
     loadConfig,
     scanRepositories,
     refreshSingleRepo,
     loadGroupBranches,
     executeGroupAction,
+    runRepoAction,
     commitRepositories,
     switchGroupBranch,
     saveGroup,
@@ -526,6 +856,20 @@ export const useRepoStore = defineStore('repo', () => {
     addScanPath,
     removeScanPath,
     toggleScanPath,
+    openOnboarding,
+    persistOnboardingProgress,
+    scanOnboardingFolder,
+    toggleOnboardingRepo,
+    selectAllOnboardingRepos,
+    clearOnboardingSelection,
+    goToOnboardingStep,
+    updateOnboardingGroupName,
+    toggleOnboardingGroup,
+    prepareOnboardingGroups,
+    completeOnboarding,
+    closeOnboarding,
+    toggleAllReposStatus,
+    clearAllReposFilters,
     selectGroup,
     openAddScanPath,
     closeScanPathModal,

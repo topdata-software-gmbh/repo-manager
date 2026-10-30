@@ -35,6 +35,15 @@ pub struct GitRepoState {
     pub remotes: Vec<RemoteInfo>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RepoKind {
+    Theme,
+    Plugin,
+    #[default]
+    Other,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Repository {
@@ -44,6 +53,8 @@ pub struct Repository {
     pub is_accessible: bool,
     pub state: GitRepoState,
     pub group_ids: Vec<String>,
+    #[serde(default)]
+    pub kind: RepoKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,11 +75,40 @@ pub struct RepoGroup {
     pub settings: GroupSettings,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum GroupingStyle {
+    #[default]
+    TopLevel,
+    Single,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingState {
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default)]
+    pub started: bool,
+    #[serde(default)]
+    pub current_step: u8,
+    #[serde(default)]
+    pub scan_path: Option<String>,
+    #[serde(default)]
+    pub owner_names: Vec<String>,
+    #[serde(default)]
+    pub grouping_style: GroupingStyle,
+    #[serde(default)]
+    pub selected_repo_paths: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub scan_paths: Vec<ScanPath>,
     pub groups: Vec<RepoGroup>,
+    #[serde(default)]
+    pub onboarding: OnboardingState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

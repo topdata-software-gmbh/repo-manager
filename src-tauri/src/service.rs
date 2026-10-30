@@ -1,7 +1,8 @@
 use crate::config::ConfigManager;
 use crate::git_runner::GitRunner;
 use crate::models::{
-    AppConfig, BranchInfo, FileChange, OperationResult, RepoGroup, Repository, ScanPath,
+    AppConfig, BranchInfo, FileChange, OnboardingState, OperationResult, RepoGroup, Repository,
+    ScanPath,
 };
 use crate::scanner::RepoScanner;
 use crate::watcher::WatcherState;
@@ -31,6 +32,36 @@ pub fn add_scan_path(config: &ConfigManager, mut scan_path: ScanPath) -> Result<
             .retain(|sp| sp.id != scan_path.id && sp.path != scan_path.path);
         cfg.scan_paths.push(scan_path);
     }
+    config.save()?;
+    config.snapshot()
+}
+
+pub fn save_onboarding_state(
+    config: &ConfigManager,
+    mut onboarding: OnboardingState,
+) -> Result<AppConfig, String> {
+    if onboarding.current_step > 3 {
+        return Err("Onboarding step must be between 0 and 3.".to_string());
+    }
+
+    onboarding.owner_names = onboarding
+        .owner_names
+        .into_iter()
+        .map(|owner| owner.trim().trim_start_matches('@').to_lowercase())
+        .filter(|owner| !owner.is_empty())
+        .collect();
+    onboarding.owner_names.sort();
+    onboarding.owner_names.dedup();
+
+    if let Some(path) = onboarding.scan_path.as_mut() {
+        *path = expand_home(path);
+    }
+
+    {
+        let mut cfg = config.config.lock().map_err(|error| error.to_string())?;
+        cfg.onboarding = onboarding;
+    }
+
     config.save()?;
     config.snapshot()
 }
@@ -231,4 +262,49 @@ pub async fn list_group_branches(repo_paths: Vec<String>) -> Result<Vec<BranchIn
     });
 
     Ok(branches)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_manager() -> (tempfile::TempDir, ConfigManager) {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = ConfigManager::from_path(temp.path().join("config.json"));
+        (temp, manager)
+    }
+
+    #[test]
+    fn normalizes_and_persists_onboarding_state() {
+        let (_temp, manager) = temp_manager();
+
+        let saved = save_onboarding_state(
+            &manager,
+            OnboardingState {
+                started: true,
+                current_step: 2,
+                scan_path: Some("/tmp/projects".to_string()),
+                owner_names: vec![" @Acme ".to_string(), "acme".to_string(), String::new()],
+                selected_repo_paths: vec!["/tmp/projects/theme".to_string()],
+                ..OnboardingState::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(saved.onboarding.owner_names, vec!["acme".to_string()]);
+        assert_eq!(saved.onboarding.current_step, 2);
+        assert!(saved.onboarding.started);
+        assert_eq!(manager.snapshot().unwrap().onboarding.current_step, 2);
+    }
+
+    #[test]
+    fn rejects_out_of_range_onboarding_step() {
+        let (_temp, manager) = temp_manager();
+        let state = OnboardingState {
+            current_step: 4,
+            ..OnboardingState::default()
+        };
+
+        assert!(save_onboarding_state(&manager, state).is_err());
+    }
 }
