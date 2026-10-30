@@ -33,7 +33,7 @@ onUnmounted(() => unsubscribe?.());
 </script>
 
 <template>
-  <div class="flex h-screen w-screen overflow-hidden bg-slate-900 font-sans text-slate-100">
+  <div class="flex h-screen w-screen overflow-hidden bg-canvas font-body text-fg">
     <OnboardingWizard v-if="store.onboardingOpen" />
     <template v-else>
       <Sidebar />

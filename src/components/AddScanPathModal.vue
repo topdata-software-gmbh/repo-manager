@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { TdButton, TdFormField, TdInput, TdModal } from '@topdata-software-gmbh/ui';
+import { TdButton, TdFormField, TdInput, TdModal } from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../stores/repoStore';
 
 const store = useRepoStore();

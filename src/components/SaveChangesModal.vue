@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { FileText, Loader2, Save, X } from 'lucide-vue-next';
+import { FileText, Save } from 'lucide-vue-next';
+import {
+  TdAlert,
+  TdBadge,
+  TdButton,
+  TdFormField,
+  TdModal,
+  TdSpinner,
+  TdTextarea,
+} from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { backend } from '../lib/backend';
 import { useRepoStore } from '../stores/repoStore';
 import type { FileChange, FileChangeStatus, Repository } from '../types/domain';
@@ -84,18 +93,19 @@ function statusLabel(status: FileChangeStatus): string {
   }
 }
 
-function statusClass(status: FileChangeStatus): string {
+type ChangeVariant = 'success' | 'error' | 'info' | 'warning' | 'neutral';
+
+function statusVariant(status: FileChangeStatus): ChangeVariant {
   switch (status) {
     case 'new':
-      return 'text-emerald-300';
+      return 'success';
     case 'deleted':
-      return 'text-rose-300';
     case 'conflict':
-      return 'text-rose-400';
+      return 'error';
     case 'renamed':
-      return 'text-sky-300';
+      return 'info';
     default:
-      return 'text-amber-300';
+      return 'warning';
   }
 }
 
@@ -131,131 +141,100 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <div
-    v-if="store.saveModalOpen"
-    class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 p-6 backdrop-blur-sm"
-    @click.self="!saving && store.closeSaveChanges()"
+  <TdModal
+    :open="store.saveModalOpen"
+    title="Save to Git"
+    description="Create a checkpoint of your work. Nothing is deleted or moved."
+    size="lg"
+    :show-close="!saving"
+    :close-on-backdrop="!saving"
+    :close-on-escape="!saving"
+    @close="!saving && store.closeSaveChanges()"
   >
-    <form
-      class="flex max-h-[88vh] w-full max-w-2xl flex-col rounded-xl border border-slate-700 bg-slate-900 shadow-2xl"
-      @submit.prevent="save"
-    >
-      <header class="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-        <div class="flex items-center gap-2">
-          <Save class="h-4 w-4 text-cyan-400" />
-          <div>
-            <h2 class="text-sm font-semibold text-slate-100">Save to Git</h2>
-            <p class="text-[11px] text-slate-500">
-              Create a checkpoint of your work. Nothing is deleted or moved.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="rounded p-1 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
-          :disabled="saving"
-          @click="store.closeSaveChanges"
-        >
-          <X class="h-4 w-4" />
-        </button>
-      </header>
-
-      <div class="flex-1 space-y-4 overflow-auto px-5 py-4">
-        <div
-          v-if="loading"
-          class="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-4 py-3 text-xs text-slate-400"
-        >
-          <Loader2 class="h-3.5 w-3.5 animate-spin" />
-          Reading your changes…
-        </div>
-
-        <div
-          v-for="repo in repos"
-          :key="repo.id"
-          class="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60"
-        >
-          <div class="flex items-center justify-between gap-3 px-4 py-3">
-            <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-slate-100">{{ repo.name }}</p>
-              <p class="truncate text-[11px] text-slate-500">
-                Working on <span class="font-mono text-slate-400">{{ repo.state.currentBranch }}</span>
-              </p>
-            </div>
-            <span class="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
-              {{ changes[repo.path]?.length ?? 0 }} changed
-            </span>
-          </div>
-
-          <div v-if="(changes[repo.path]?.length ?? 0) > 0" class="border-t border-slate-800/70">
-            <div class="max-h-40 overflow-auto px-4 py-2">
-              <div
-                v-for="change in changes[repo.path]"
-                :key="`${change.status}:${change.path}`"
-                class="flex items-center gap-2 py-0.5 font-mono text-[11px]"
-              >
-                <FileText class="h-3 w-3 shrink-0 text-slate-600" />
-                <span class="min-w-0 flex-1 truncate text-slate-400" :title="change.path">
-                  {{ change.path }}
-                </span>
-                <span class="shrink-0 text-[10px]" :class="statusClass(change.status)">
-                  {{ statusLabel(change.status) }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label for="commit-message" class="mb-1.5 block text-xs font-medium text-slate-300">
-            What did you change?
-          </label>
-          <textarea
-            id="commit-message"
-            v-model="message"
-            rows="3"
-            autofocus
-            placeholder="For example: Updated the header layout and product card colors"
-            class="w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-500"
-          ></textarea>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-            Write a short note for your future self. It will appear in the project history.
-            <span v-if="repos.length > 1">
-              One checkpoint will be created in each of the {{ repos.length }} projects.
-            </span>
-          </p>
-        </div>
-
-        <pre
-          v-if="error"
-          class="max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-200"
-        >{{ error }}</pre>
+    <form id="save-changes-form" class="space-y-4" @submit.prevent="save">
+      <div
+        v-if="loading"
+        class="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-xs text-fg-muted"
+      >
+        <TdSpinner size="sm" label="Reading your changes" />
+        Reading your changes…
       </div>
 
-      <footer class="flex items-center justify-between border-t border-slate-800 px-5 py-3">
-        <p class="text-[11px] text-slate-500">
+      <div v-for="repo in repos" :key="repo.id" class="rounded-lg border border-border bg-surface">
+        <div class="flex items-center justify-between gap-3 px-4 py-3">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-fg">{{ repo.name }}</p>
+            <p class="truncate text-xs text-fg-muted">
+              Working on <span class="font-mono text-fg-muted">{{ repo.state.currentBranch }}</span>
+            </p>
+          </div>
+          <TdBadge variant="neutral">{{ changes[repo.path]?.length ?? 0 }} changed</TdBadge>
+        </div>
+
+        <div v-if="(changes[repo.path]?.length ?? 0) > 0" class="border-t border-border">
+          <div class="max-h-40 overflow-auto px-4 py-2">
+            <div
+              v-for="change in changes[repo.path]"
+              :key="`${change.status}:${change.path}`"
+              class="flex items-center gap-2 py-0.5 font-mono text-xs"
+            >
+              <FileText class="h-3 w-3 shrink-0 text-fg-dim" />
+              <span class="min-w-0 flex-1 truncate text-fg-muted" :title="change.path">
+                {{ change.path }}
+              </span>
+              <TdBadge :variant="statusVariant(change.status)" size="sm">
+                {{ statusLabel(change.status) }}
+              </TdBadge>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TdFormField
+        label="What did you change?"
+        hint="Write a short note for your future self. It will appear in the project history."
+        required
+      >
+        <template #default="{ id, required }">
+          <TdTextarea
+            :id="id"
+            v-model="message"
+            :required="required"
+            :rows="3"
+            autofocus
+            class="resize-none"
+            placeholder="For example: Updated the header layout and product card colors"
+          />
+        </template>
+      </TdFormField>
+
+      <TdAlert v-if="error" variant="error">
+        <pre class="whitespace-pre-wrap font-mono text-xs">{{ error }}</pre>
+      </TdAlert>
+    </form>
+
+    <template #footer>
+      <div class="flex w-full items-center justify-between">
+        <p class="text-xs text-fg-muted">
           {{ totalFiles }} {{ totalFiles === 1 ? 'file' : 'files' }} across
           {{ repos.length }} {{ repos.length === 1 ? 'project' : 'projects' }}
         </p>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="rounded-lg px-3 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
-            :disabled="saving"
-            @click="store.closeSaveChanges"
-          >
+          <TdButton variant="ghost" :disabled="saving" @click="store.closeSaveChanges">
             Cancel
-          </button>
-          <button
+          </TdButton>
+          <TdButton
             type="submit"
+            form="save-changes-form"
+            variant="primary"
+            :loading="saving"
             :disabled="!canSave"
-            class="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Loader2 v-if="saving" class="h-3.5 w-3.5 animate-spin" />
-            <Save v-else class="h-3.5 w-3.5" />
-            <span>Save to Git</span>
-          </button>
+            <template #icon-left><Save /></template>
+            Save to Git
+          </TdButton>
         </div>
-      </footer>
-    </form>
-  </div>
+      </div>
+    </template>
+  </TdModal>
 </template>

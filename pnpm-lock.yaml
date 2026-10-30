@@ -14,9 +14,9 @@ importers:
       '@topdata-software-gmbh/design-tokens':
         specifier: link:../topdata-design-system/packages/tokens
         version: link:../topdata-design-system/packages/tokens
-      '@topdata-software-gmbh/ui':
-        specifier: link:../topdata-design-system/packages/ui
-        version: link:../topdata-design-system/packages/ui
+      '@topdata-software-gmbh/ui-kit-web-vue3':
+        specifier: link:../topdata-design-system/packages/ui-kit-web-vue3
+        version: link:../topdata-design-system/packages/ui-kit-web-vue3
       lucide-vue-next:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.44(typescript@5.9.3))

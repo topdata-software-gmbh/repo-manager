@@ -1,50 +1,46 @@
 import type { Repository } from '../types/domain';
 
+export type StatusBadgeVariant = 'neutral' | 'success' | 'info' | 'warning' | 'error';
+
 export interface StatusBadge {
   label: string;
-  className: string;
+  variant: StatusBadgeVariant;
 }
 
 export function statusBadges(repo: Repository): StatusBadge[] {
   if (!repo.isAccessible) {
-    return [{ label: 'Folder not found', className: 'bg-rose-500/15 text-rose-300' }];
+    return [{ label: 'Folder not found', variant: 'error' }];
   }
 
   const badges: StatusBadge[] = [];
 
   if (repo.state.hasConflicts) {
-    badges.push({ label: 'Needs attention', className: 'bg-rose-500/15 text-rose-300' });
+    badges.push({ label: 'Needs attention', variant: 'error' });
   }
 
   if (repo.state.operationState !== 'idle') {
-    badges.push({
-      label: operationLabel(repo.state.operationState),
-      className: 'bg-amber-500/15 text-amber-300',
-    });
+    badges.push({ label: operationLabel(repo.state.operationState), variant: 'warning' });
   }
 
   if (!repo.state.isClean) {
-    badges.push({ label: 'Changes not saved', className: 'bg-amber-500/10 text-amber-300' });
+    badges.push({ label: 'Changes not saved', variant: 'warning' });
   }
 
   if (repo.state.behindCount > 0) {
     badges.push({
       label: `${repo.state.behindCount} ${repo.state.behindCount === 1 ? 'update' : 'updates'} available`,
-      className: 'bg-sky-500/10 text-sky-300',
+      variant: 'info',
     });
   }
 
   if (repo.state.aheadCount > 0) {
-    badges.push({
-      label: `${repo.state.aheadCount} to send`,
-      className: 'bg-emerald-500/10 text-emerald-300',
-    });
+    badges.push({ label: `${repo.state.aheadCount} to send`, variant: 'success' });
   }
 
   if (repo.state.remotes.length === 0) {
-    badges.push({ label: 'On this computer only', className: 'bg-slate-800 text-slate-400' });
+    badges.push({ label: 'On this computer only', variant: 'neutral' });
   } else if (repo.state.isClean && repo.state.aheadCount === 0 && repo.state.behindCount === 0) {
-    badges.push({ label: 'Up to date', className: 'bg-emerald-500/10 text-emerald-300' });
+    badges.push({ label: 'Up to date', variant: 'success' });
   }
 
   return badges;

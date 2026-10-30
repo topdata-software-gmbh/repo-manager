@@ -5,11 +5,11 @@ import {
   ArrowDownToLine,
   GitBranch,
   GitMerge,
-  Loader2,
   RefreshCw,
   Save,
   Upload,
 } from 'lucide-vue-next';
+import { TdBadge, TdButton, TdSpinner } from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../stores/repoStore';
 import { branchLabel, statusBadges } from '../lib/repoStatus';
 import type { Repository } from '../types/domain';
@@ -55,7 +55,7 @@ function isRowBusy(repo: Repository): boolean {
   <div class="min-h-0 flex-1 overflow-auto">
     <table class="w-full min-w-[780px] border-collapse text-left">
       <thead
-        class="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 text-[10px] font-semibold uppercase tracking-wider text-slate-400 backdrop-blur"
+        class="sticky top-0 z-10 border-b border-border bg-canvas/95 text-[10px] font-semibold uppercase tracking-wider text-fg-muted backdrop-blur"
       >
         <tr>
           <th class="px-4 py-2.5">Project</th>
@@ -64,33 +64,28 @@ function isRowBusy(repo: Repository): boolean {
           <th class="w-36 px-3 py-2.5"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-800/60">
+      <tbody class="divide-y divide-border">
         <tr
           v-for="repo in props.repos"
           :key="repo.id"
-          class="transition-colors hover:bg-slate-800/40"
+          class="transition-colors hover:bg-surface-hover"
           :class="{ 'opacity-60': !repo.isAccessible }"
         >
           <td class="px-4 py-3">
-            <div class="flex items-center gap-2 text-sm font-medium text-slate-100">
+            <div class="flex items-center gap-2 text-sm font-medium text-fg">
               <span class="truncate">{{ repo.name }}</span>
-              <span
-                v-if="repo.state.isDetachedHead"
-                class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-300"
-              >
-                not on a branch
-              </span>
+              <TdBadge v-if="repo.state.isDetachedHead" variant="warning">not on a branch</TdBadge>
             </div>
             <div class="mt-1 flex flex-wrap items-center gap-2">
-              <span
-                class="inline-flex items-center gap-1 rounded border border-slate-700/60 bg-slate-800 px-1.5 py-0.5 font-mono text-[10px]"
-                :class="repo.state.isDetachedHead ? 'text-amber-300' : 'text-cyan-300'"
+              <TdBadge
+                :variant="repo.state.isDetachedHead ? 'warning' : 'primary'"
+                class="gap-1 font-mono"
                 title="The branch (version) you are working on"
               >
-                <GitBranch class="h-3 w-3 shrink-0" />
+                <template #icon><GitBranch /></template>
                 {{ branchLabel(repo) }}
-              </span>
-              <span class="max-w-[28rem] truncate text-[10px] text-slate-500" :title="repo.path">
+              </TdBadge>
+              <span class="max-w-[28rem] truncate text-[10px] text-fg-dim" :title="repo.path">
                 {{ repo.path }}
               </span>
             </div>
@@ -98,41 +93,40 @@ function isRowBusy(repo: Repository): boolean {
 
           <td class="px-4 py-3">
             <div class="flex max-w-xs flex-wrap items-center gap-1.5">
-              <span
+              <TdBadge
                 v-for="badge in statusBadges(repo)"
                 :key="badge.label"
-                class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                :class="badge.className"
+                :variant="badge.variant"
               >
-                <AlertCircle v-if="badge.label === 'Needs attention'" class="h-3 w-3" />
-                <GitMerge v-else-if="badge.label.includes('in progress')" class="h-3 w-3" />
+                <template #icon>
+                  <AlertCircle v-if="badge.label === 'Needs attention'" />
+                  <GitMerge v-else-if="badge.label.includes('in progress')" />
+                </template>
                 {{ badge.label }}
-              </span>
+              </TdBadge>
             </div>
           </td>
 
           <td class="px-4 py-3">
             <div v-if="repo.state.headCommitHash" class="min-w-0">
-              <p
-                class="max-w-md truncate text-xs text-slate-300"
-                :title="repo.state.headCommitMessage"
-              >
+              <p class="max-w-md truncate text-xs text-fg" :title="repo.state.headCommitMessage">
                 {{ repo.state.headCommitMessage }}
               </p>
-              <p class="mt-0.5 font-mono text-[10px] text-slate-500">
+              <p class="mt-0.5 font-mono text-[10px] text-fg-muted">
                 {{ repo.state.headCommitHash }}
               </p>
             </div>
-            <span v-else class="text-[11px] italic text-slate-600">
+            <span v-else class="text-[11px] italic text-fg-dim">
               No checkpoints saved yet
             </span>
           </td>
 
           <td class="px-3 py-3">
             <div class="flex items-center justify-end gap-1.5">
-              <button
+              <TdButton
                 v-if="!repo.state.isClean"
-                class="flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+                variant="ghost"
+                size="sm"
                 :disabled="store.isLoading"
                 :title="
                   repo.state.hasConflicts
@@ -141,49 +135,58 @@ function isRowBusy(repo: Repository): boolean {
                 "
                 @click="store.openSaveChanges([repo.path])"
               >
-                <Save class="h-3 w-3" />
+                <template #icon-left><Save /></template>
                 <span>{{ repo.state.hasConflicts ? 'Review' : 'Save' }}</span>
-              </button>
+              </TdButton>
 
               <template v-if="props.actions === 'browse'">
-                <button
-                  class="rounded p-1.5 text-emerald-400 transition-colors hover:bg-slate-700 disabled:opacity-50"
+                <TdButton
+                  variant="ghost"
+                  size="sm"
                   :disabled="!repo.isAccessible || store.isLoading || isRowBusy(repo)"
                   :aria-label="`Get latest for ${repo.name}`"
                   title="Get latest for this project"
                   @click="runAction(repo, 'pull')"
                 >
-                  <Loader2
-                    v-if="pendingAction?.path === repo.path && pendingAction.action === 'pull'"
-                    class="h-3.5 w-3.5 animate-spin"
-                  />
-                  <ArrowDownToLine v-else class="h-3.5 w-3.5" />
-                </button>
-                <button
-                  class="rounded p-1.5 text-sky-400 transition-colors hover:bg-slate-700 disabled:opacity-50"
+                  <template #icon-left>
+                    <TdSpinner
+                      v-if="pendingAction?.path === repo.path && pendingAction.action === 'pull'"
+                      size="sm"
+                    />
+                    <ArrowDownToLine v-else class="text-success-fg" />
+                  </template>
+                </TdButton>
+                <TdButton
+                  variant="ghost"
+                  size="sm"
                   :disabled="!repo.isAccessible || store.isLoading || isRowBusy(repo)"
                   :aria-label="`Send changes for ${repo.name}`"
                   title="Send changes for this project"
                   @click="runAction(repo, 'push')"
                 >
-                  <Loader2
-                    v-if="pendingAction?.path === repo.path && pendingAction.action === 'push'"
-                    class="h-3.5 w-3.5 animate-spin"
-                  />
-                  <Upload v-else class="h-3.5 w-3.5" />
-                </button>
+                  <template #icon-left>
+                    <TdSpinner
+                      v-if="pendingAction?.path === repo.path && pendingAction.action === 'push'"
+                      size="sm"
+                    />
+                    <Upload v-else class="text-info-fg" />
+                  </template>
+                </TdButton>
               </template>
 
-              <button
-                class="rounded p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-slate-200 disabled:opacity-50"
+              <TdButton
+                variant="ghost"
+                size="sm"
                 :disabled="isRowBusy(repo)"
                 :aria-label="`Refresh ${repo.name}`"
                 title="Refresh this project"
                 @click="refresh(repo.path)"
               >
-                <Loader2 v-if="refreshing === repo.path" class="h-3.5 w-3.5 animate-spin" />
-                <RefreshCw v-else class="h-3.5 w-3.5" />
-              </button>
+                <template #icon-left>
+                  <TdSpinner v-if="refreshing === repo.path" size="sm" />
+                  <RefreshCw v-else />
+                </template>
+              </TdButton>
             </div>
           </td>
         </tr>

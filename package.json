@@ -15,7 +15,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
     "@topdata-software-gmbh/design-tokens": "link:../topdata-design-system/packages/tokens",
-    "@topdata-software-gmbh/ui": "link:../topdata-design-system/packages/ui",
+    "@topdata-software-gmbh/ui-kit-web-vue3": "link:../topdata-design-system/packages/ui-kit-web-vue3",
     "lucide-vue-next": "^1.0.0",
     "pinia": "^2.2.0",
     "vue": "^3.4.30"

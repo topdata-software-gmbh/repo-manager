@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { ArrowLeft, ArrowRight, Layers } from 'lucide-vue-next';
+import {
+  TdAlert,
+  TdBadge,
+  TdButton,
+  TdCheckbox,
+  TdInput,
+} from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../../stores/repoStore';
 import { createGroup } from '../../lib/groupDefaults';
 
@@ -59,14 +66,14 @@ async function finish(): Promise<void> {
 <template>
   <div class="space-y-5">
     <div>
-      <h2 class="text-lg font-semibold text-slate-100">Confirm your groups</h2>
-      <p class="mt-1.5 text-sm leading-relaxed text-slate-400">
+      <h2 class="text-lg font-semibold text-fg">Confirm your groups</h2>
+      <p class="mt-1.5 text-sm leading-relaxed text-fg-muted">
         We suggested these from your folders. Rename them or leave one out; you can fine-tune
         membership later.
       </p>
     </div>
 
-    <p class="font-mono text-xs text-slate-500">
+    <p class="font-mono text-xs text-fg-muted">
       {{ store.onboardingSelectedRepositories.length }}
       {{ store.onboardingSelectedRepositories.length === 1 ? 'project' : 'projects' }} accepted
     </p>
@@ -75,38 +82,33 @@ async function finish(): Promise<void> {
       <div
         v-for="(group, index) in store.onboardingGroups"
         :key="index"
-        class="rounded-xl border border-slate-800 bg-slate-950 px-4 py-3"
+        class="rounded-xl border border-border bg-canvas px-4 py-3"
         :class="{ 'opacity-60': !group.included }"
       >
         <div class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            :checked="group.included"
+          <TdCheckbox
+            :model-value="group.included"
             :aria-label="`Include ${group.name}`"
-            class="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-900 accent-cyan-500"
-            @change="store.toggleOnboardingGroup(index)"
+            class="mt-1"
+            @update:model-value="store.toggleOnboardingGroup(index)"
           />
           <div class="min-w-0 flex-1 space-y-2">
             <div class="flex flex-wrap items-center gap-2">
-              <Layers class="h-3.5 w-3.5 shrink-0 text-cyan-400" />
-              <input
-                :value="group.name"
-                type="text"
-                :aria-label="`Name for group ${index + 1}`"
-                class="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-cyan-500"
-                @input="
-                  store.updateOnboardingGroupName(
-                    index,
-                    ($event.target as HTMLInputElement).value,
-                  )
-                "
-              />
-              <span class="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+              <Layers class="h-3.5 w-3.5 shrink-0 text-primary" />
+              <div class="min-w-0 flex-1">
+                <TdInput
+                  :model-value="group.name"
+                  type="text"
+                  :aria-label="`Name for group ${index + 1}`"
+                  @update:model-value="store.updateOnboardingGroupName(index, $event)"
+                />
+              </div>
+              <TdBadge variant="neutral">
                 {{ group.repoPaths.length }}
                 {{ group.repoPaths.length === 1 ? 'project' : 'projects' }}
-              </span>
+              </TdBadge>
             </div>
-            <p class="text-[11px] text-slate-500">{{ repoSummary(group.repoPaths) }}</p>
+            <p class="text-[11px] text-fg-muted">{{ repoSummary(group.repoPaths) }}</p>
           </div>
         </div>
       </div>
@@ -114,31 +116,27 @@ async function finish(): Promise<void> {
 
     <div
       v-else
-      class="rounded-xl border border-dashed border-slate-700 px-5 py-10 text-center text-sm text-slate-400"
+      class="rounded-xl border border-dashed border-border px-5 py-10 text-center text-sm text-fg-muted"
     >
       No groups to suggest. Go back and select at least one project.
     </div>
 
-    <p v-if="errorMessage" role="alert" class="text-sm text-rose-400">{{ errorMessage }}</p>
+    <TdAlert v-if="errorMessage" variant="error">{{ errorMessage }}</TdAlert>
 
     <div class="flex items-center justify-between gap-3">
-      <button
-        type="button"
-        class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-        @click="store.goToOnboardingStep(1)"
-      >
-        <ArrowLeft class="h-3.5 w-3.5" />
+      <TdButton variant="ghost" @click="store.goToOnboardingStep(1)">
+        <template #icon-left><ArrowLeft /></template>
         Back
-      </button>
-      <button
-        type="button"
-        class="flex items-center gap-2 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+      </TdButton>
+      <TdButton
+        variant="primary"
         :disabled="includedGroups.length === 0 || submitting"
+        :loading="submitting"
         @click="finish"
       >
         Finish setup
-        <ArrowRight class="h-4 w-4" />
-      </button>
+        <template #icon-right><ArrowRight /></template>
+      </TdButton>
     </div>
   </div>
 </template>

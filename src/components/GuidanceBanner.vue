@@ -9,6 +9,7 @@ import {
   Save,
   Upload,
 } from 'lucide-vue-next';
+import { TdAlert, TdButton } from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../stores/repoStore';
 
 const store = useRepoStore();
@@ -26,16 +27,16 @@ const icon = computed(() => {
   }
 });
 
-const toneClasses = computed(() => {
+const alertVariant = computed<'error' | 'warning' | 'info' | 'success'>(() => {
   switch (store.insight?.tone) {
     case 'danger':
-      return 'border-rose-500/30 bg-rose-500/10 text-rose-200';
+      return 'error';
     case 'warning':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
+      return 'warning';
     case 'info':
-      return 'border-sky-500/30 bg-sky-500/10 text-sky-100';
+      return 'info';
     default:
-      return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100';
+      return 'success';
   }
 });
 
@@ -67,38 +68,25 @@ async function runAction(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="store.insight" class="border-b border-slate-800/70 px-4 py-3">
-    <div
-      class="flex flex-col gap-3 rounded-xl border px-4 py-3 sm:flex-row sm:items-center"
-      :class="toneClasses"
-      aria-live="polite"
-    >
-      <component :is="icon" class="h-5 w-5 shrink-0" />
-
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold text-slate-50">{{ store.insight.title }}</p>
-        <p class="mt-0.5 text-xs leading-relaxed text-slate-300">
-          {{ store.insight.message }}
-        </p>
-      </div>
-
-      <div class="flex shrink-0 items-center gap-2">
-        <button
-          class="rounded-lg px-2.5 py-1.5 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-          @click="store.openHelp"
-        >
+  <div v-if="store.insight" class="border-b border-border px-4 py-3">
+    <TdAlert :variant="alertVariant" :title="store.insight.title">
+      <template #icon><component :is="icon" /></template>
+      {{ store.insight.message }}
+      <template #actions>
+        <TdButton variant="ghost" size="sm" @click="store.openHelp">
           How this works
-        </button>
-        <button
+        </TdButton>
+        <TdButton
           v-if="store.insight.action && actionIcon"
-          class="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+          variant="secondary"
+          size="sm"
           :disabled="actionBusy"
           @click="runAction"
         >
-          <component :is="actionIcon" class="h-3.5 w-3.5" />
+          <template #icon-left><component :is="actionIcon" /></template>
           <span>{{ store.insight.actionLabel }}</span>
-        </button>
-      </div>
-    </div>
+        </TdButton>
+      </template>
+    </TdAlert>
   </div>
 </template>

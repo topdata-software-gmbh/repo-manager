@@ -1,25 +1,30 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   Archive,
   ArchiveRestore,
   ArrowDownToLine,
   GitBranch,
   HelpCircle,
-  Loader2,
   MoreHorizontal,
   RefreshCw,
   Save,
   Upload,
 } from 'lucide-vue-next';
+import {
+  TdBadge,
+  TdButton,
+  TdMenu,
+  TdMenuItem,
+  TdSelect,
+  TdSpinner,
+} from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../stores/repoStore';
 
 const store = useRepoStore();
 const selectedBranch = ref('');
 const switching = ref(false);
 const activeAction = ref<string | null>(null);
-const moreOpen = ref(false);
-const moreRef = ref<HTMLElement | null>(null);
 
 const busy = computed(() => store.isLoading || store.isScanning);
 const canSwitchBranch = computed(
@@ -36,6 +41,19 @@ const branchSelection = computed({
   },
 });
 
+const branchOptions = computed(() => [
+  {
+    value: '',
+    label:
+      store.filteredRepositories.length === 0 ? 'No projects yet' : 'Choose a branch…',
+    disabled: true,
+  },
+  ...store.groupBranches.map((branch) => ({
+    value: branch.name,
+    label: `${branch.name} (${branch.repoCount}/${store.filteredRepositories.length})`,
+  })),
+]);
+
 watch(
   () => store.selectedGroupId,
   () => {
@@ -51,15 +69,6 @@ watch(
     }
   },
 );
-
-function handleOutsideClick(event: MouseEvent): void {
-  if (!moreOpen.value) return;
-  if (moreRef.value?.contains(event.target as Node)) return;
-  moreOpen.value = false;
-}
-
-onMounted(() => document.addEventListener('click', handleOutsideClick));
-onUnmounted(() => document.removeEventListener('click', handleOutsideClick));
 
 async function onBranchChange(): Promise<void> {
   const branch = selectedBranch.value;
@@ -79,7 +88,6 @@ async function runAction(
   action: 'fetch' | 'pull' | 'push' | 'stash' | 'stash_pop',
 ): Promise<void> {
   if (activeAction.value || busy.value) return;
-  moreOpen.value = false;
   activeAction.value = action;
   try {
     await store.executeGroupAction(action);
@@ -91,164 +99,152 @@ async function runAction(
 
 <template>
   <header
-    class="flex min-h-16 shrink-0 select-none flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5"
+    class="flex min-h-16 shrink-0 select-none flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2.5"
   >
     <div class="flex min-w-0 flex-wrap items-center gap-3">
-      <span class="max-w-48 truncate text-sm font-semibold text-slate-100">
+      <span class="max-w-48 truncate text-sm font-semibold text-fg">
         {{ store.currentGroup ? store.currentGroup.name : 'Project group' }}
       </span>
-      <span class="rounded-full bg-slate-800 px-2 py-0.5 font-mono text-[11px] text-slate-300">
+      <TdBadge variant="neutral">
         {{ store.filteredRepositories.length }}
         {{ store.filteredRepositories.length === 1 ? 'project' : 'projects' }}
-      </span>
+      </TdBadge>
       <span
         v-if="store.filteredRepositories.length > 0"
-        class="hidden items-center gap-1 text-[11px] text-emerald-400/90 lg:flex"
+        class="hidden items-center gap-1 text-[11px] text-success-fg lg:flex"
         title="Projects with no changes waiting"
       >
-        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+        <span class="h-1.5 w-1.5 rounded-full bg-success"></span>
         {{ store.cleanRepositoryCount }} up to date
       </span>
 
       <div
         v-if="showBranchSelector"
-        class="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5"
+        class="flex items-center gap-2 rounded-lg border border-border bg-surface-raised px-2.5 py-1.5"
         title="Choose which version of the project you want to work on"
       >
-        <Loader2
+        <TdSpinner
           v-if="switching || store.isBranchListLoading"
-          class="h-3.5 w-3.5 animate-spin text-cyan-400"
+          size="sm"
+          label="Loading branches"
+          class="text-primary"
         />
-        <GitBranch v-else class="h-3.5 w-3.5 text-cyan-400" />
-        <span class="text-[11px] font-medium text-slate-400">Working on</span>
-        <select
+        <GitBranch v-else class="h-3.5 w-3.5 text-primary" />
+        <span class="text-[11px] font-medium text-fg-muted">Working on</span>
+        <TdSelect
           v-model="branchSelection"
+          :options="branchOptions"
           :disabled="!canSwitchBranch"
-          class="max-w-44 cursor-pointer bg-transparent font-mono text-xs text-slate-100 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Working on branch"
+          size="sm"
+          class="max-w-44"
           @change="onBranchChange"
-        >
-          <option value="" disabled>
-            {{
-              store.filteredRepositories.length === 0
-                ? 'No projects yet'
-                : 'Choose a branch…'
-            }}
-          </option>
-          <option v-for="branch in store.groupBranches" :key="branch.name" :value="branch.name">
-            {{ branch.name }} ({{ branch.repoCount }}/{{ store.filteredRepositories.length }})
-          </option>
-        </select>
+        />
       </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-1.5">
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+      <TdButton
+        variant="primary"
+        size="sm"
         :disabled="busy || dirtyCount === 0"
         title="Create a checkpoint of your changed files in Git"
         @click="store.openSaveChanges()"
       >
-        <Save class="h-3.5 w-3.5" />
+        <template #icon-left><Save /></template>
         <span>Save to Git</span>
-        <span v-if="dirtyCount > 0" class="rounded-full bg-slate-950/15 px-1.5 text-[10px]">
-          {{ dirtyCount }}
-        </span>
-      </button>
+        <TdBadge v-if="dirtyCount > 0" variant="neutral">{{ dirtyCount }}</TdBadge>
+      </TdButton>
 
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+      <TdButton
+        variant="secondary"
+        size="sm"
         :disabled="busy || store.filteredRepositories.length === 0"
         title="Download new work from the server and update your project folders"
         @click="runAction('pull')"
       >
-        <Loader2 v-if="activeAction === 'pull'" class="h-3.5 w-3.5 animate-spin" />
-        <ArrowDownToLine v-else class="h-3.5 w-3.5 text-emerald-400" />
+        <template #icon-left>
+          <TdSpinner v-if="activeAction === 'pull'" size="sm" />
+          <ArrowDownToLine v-else class="text-success-fg" />
+        </template>
         <span>Get latest</span>
-      </button>
+      </TdButton>
 
-      <button
-        class="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+      <TdButton
+        variant="secondary"
+        size="sm"
         :disabled="busy || store.filteredRepositories.length === 0"
         title="Upload your saved checkpoints to the server"
         @click="runAction('push')"
       >
-        <Loader2 v-if="activeAction === 'push'" class="h-3.5 w-3.5 animate-spin" />
-        <Upload v-else class="h-3.5 w-3.5 text-sky-400" />
+        <template #icon-left>
+          <TdSpinner v-if="activeAction === 'push'" size="sm" />
+          <Upload v-else class="text-info-fg" />
+        </template>
         <span>Send changes</span>
-      </button>
+      </TdButton>
 
-      <button
-        class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+      <TdButton
+        variant="ghost"
+        size="sm"
         :disabled="busy"
         title="Rescan your project folders"
+        aria-label="Rescan your project folders"
         @click="store.scanRepositories"
       >
-        <Loader2 v-if="store.isScanning" class="h-3.5 w-3.5 animate-spin" />
-        <RefreshCw v-else class="h-3.5 w-3.5" />
-      </button>
+        <template #icon-left>
+          <TdSpinner v-if="store.isScanning" size="sm" />
+          <RefreshCw v-else />
+        </template>
+      </TdButton>
 
-      <div ref="moreRef" class="relative">
-        <button
-          class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
-          title="More Git actions"
-          @click="moreOpen = !moreOpen"
+      <TdMenu aria-label="More Git actions">
+        <template #trigger="{ open }">
+          <TdButton
+            variant="ghost"
+            size="sm"
+            aria-label="More Git actions"
+            aria-haspopup="menu"
+            :aria-expanded="open"
+          >
+            <template #icon-left><MoreHorizontal /></template>
+          </TdButton>
+        </template>
+        <TdMenuItem
+          :disabled="busy || store.filteredRepositories.length === 0"
+          @select="runAction('fetch')"
         >
-          <MoreHorizontal class="h-4 w-4" />
-        </button>
-
-        <div
-          v-if="moreOpen"
-          class="absolute right-0 top-9 z-30 w-64 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+          <template #icon><RefreshCw /></template>
+          Check for updates
+          <template #description>Looks for new work without changing your files.</template>
+        </TdMenuItem>
+        <TdMenuItem
+          :disabled="busy || store.filteredRepositories.length === 0"
+          @select="runAction('stash')"
         >
-          <button
-            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
-            :disabled="busy || store.filteredRepositories.length === 0"
-            @click="runAction('fetch')"
-          >
-            <RefreshCw class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span>
-              <span class="block text-xs text-slate-200">Check for updates</span>
-              <span class="block text-[10px] text-slate-500">
-                Looks for new work without changing your files.
-              </span>
-            </span>
-          </button>
-          <button
-            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
-            :disabled="busy || store.filteredRepositories.length === 0"
-            @click="runAction('stash')"
-          >
-            <Archive class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span>
-              <span class="block text-xs text-slate-200">Set aside changes</span>
-              <span class="block text-[10px] text-slate-500">
-                Temporarily store unfinished work in all projects.
-              </span>
-            </span>
-          </button>
-          <button
-            class="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-slate-800 disabled:opacity-50"
-            :disabled="busy || store.filteredRepositories.length === 0"
-            @click="runAction('stash_pop')"
-          >
-            <ArchiveRestore class="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span>
-              <span class="block text-xs text-slate-200">Bring back set-aside changes</span>
-              <span class="block text-[10px] text-slate-500">
-                Restore the last set of changes in all projects.
-              </span>
-            </span>
-          </button>
-        </div>
-      </div>
+          <template #icon><Archive /></template>
+          Set aside changes
+          <template #description>Temporarily store unfinished work in all projects.</template>
+        </TdMenuItem>
+        <TdMenuItem
+          :disabled="busy || store.filteredRepositories.length === 0"
+          @select="runAction('stash_pop')"
+        >
+          <template #icon><ArchiveRestore /></template>
+          Bring back set-aside changes
+          <template #description>Restore the last set of changes in all projects.</template>
+        </TdMenuItem>
+      </TdMenu>
 
-      <button
-        class="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+      <TdButton
+        variant="ghost"
+        size="sm"
         title="How this works"
+        aria-label="How this works"
         @click="store.openHelp"
       >
-        <HelpCircle class="h-4 w-4" />
-      </button>
+        <template #icon-left><HelpCircle /></template>
+      </TdButton>
     </div>
   </header>
 </template>

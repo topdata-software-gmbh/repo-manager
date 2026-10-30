@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { FolderSearch, Search, SlidersHorizontal } from 'lucide-vue-next';
+import {
+  TdButton,
+  TdFormField,
+  TdInput,
+  TdSegmentedControl,
+  TdSelect,
+} from '@topdata-software-gmbh/ui-kit-web-vue3';
 import RepoListTable from './RepoListTable.vue';
 import { useRepoStore } from '../stores/repoStore';
 import type { RepoStatusFilter } from '../lib/repoFilters';
+import type { RepoKind } from '../types/domain';
 
 const store = useRepoStore();
 
@@ -22,6 +30,34 @@ const groupOptions = computed(() => [
   ...store.config.groups.map((group) => ({ value: group.id, label: group.name })),
 ]);
 
+const kindOptions: Array<{ value: RepoKind | 'all'; label: string }> = [
+  { value: 'all', label: 'Any type' },
+  { value: 'theme', label: 'Theme' },
+  { value: 'plugin', label: 'Plugin' },
+  { value: 'other', label: 'Other' },
+];
+
+const kindFilter = computed({
+  get: () => store.allReposFilters.kind,
+  set: (value: string) => {
+    store.allReposFilters.kind = value as RepoKind | 'all';
+  },
+});
+
+const statusFilter = computed({
+  get: () => store.allReposFilters.statuses,
+  set: (value: string[]) => {
+    store.allReposFilters.statuses = value as RepoStatusFilter[];
+  },
+});
+
+const statusOptionsWithCounts = computed(() =>
+  statusOptions.map((option) => ({
+    ...option,
+    count: store.allReposStatusCounts[option.value],
+  })),
+);
+
 const hasFilters = computed(() => {
   const filters = store.allReposFilters;
   return (
@@ -34,99 +70,73 @@ const hasFilters = computed(() => {
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col bg-slate-900">
-    <header class="border-b border-slate-800/70 px-4 py-3">
+  <section class="flex min-h-0 flex-1 flex-col bg-surface">
+    <header class="border-b border-border px-4 py-3">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 class="text-base font-semibold text-slate-100">All repos</h1>
-          <p class="mt-0.5 text-xs text-slate-400">
+          <h1 class="text-base font-semibold text-fg">All repos</h1>
+          <p class="mt-0.5 text-xs text-fg-muted">
             Browse every project. Save, update, or send work from a single row — or open a group to
             act on several at once.
           </p>
         </div>
-        <button
-          class="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
-          @click="store.openAddScanPath"
-        >
-          <FolderSearch class="h-3.5 w-3.5" />
+        <TdButton variant="secondary" @click="store.openAddScanPath">
+          <template #icon-left><FolderSearch /></template>
           Add project folder
-        </button>
+        </TdButton>
       </div>
 
-      <div class="mt-3 flex flex-wrap items-center gap-2">
-        <label class="relative min-w-56 flex-1">
-          <span class="sr-only">Search all repositories</span>
-          <Search
-            class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
-          />
-          <input
+      <div class="mt-3 flex flex-wrap items-end gap-2">
+        <div class="min-w-56 flex-1">
+          <TdInput
             v-model="store.allReposFilters.search"
             type="search"
             placeholder="Search name, path, or branch…"
-            class="w-full rounded-lg border border-slate-800 bg-slate-950 py-1.5 pl-9 pr-3 text-xs text-slate-200 placeholder:text-slate-600 focus:border-cyan-600"
-          />
-        </label>
-
-        <label class="flex items-center gap-2 text-[11px] text-slate-400">
-          Group
-          <select
-            v-model="store.allReposFilters.groupId"
-            class="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
+            aria-label="Search all repositories"
           >
-            <option v-for="option in groupOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
+            <template #prefix><Search class="h-3.5 w-3.5 text-fg-muted" /></template>
+          </TdInput>
+        </div>
 
-        <label class="flex items-center gap-2 text-[11px] text-slate-400">
-          Type
-          <select
-            v-model="store.allReposFilters.kind"
-            class="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1.5 text-xs text-slate-200"
-          >
-            <option value="all">Any type</option>
-            <option value="theme">Theme</option>
-            <option value="plugin">Plugin</option>
-            <option value="other">Other</option>
-          </select>
-        </label>
+        <div class="w-44">
+          <TdFormField label="Group">
+            <template #default="{ id }">
+              <TdSelect :id="id" v-model="store.allReposFilters.groupId" :options="groupOptions" />
+            </template>
+          </TdFormField>
+        </div>
+
+        <div class="w-36">
+          <TdFormField label="Type">
+            <template #default="{ id }">
+              <TdSelect :id="id" v-model="kindFilter" :options="kindOptions" />
+            </template>
+          </TdFormField>
+        </div>
       </div>
 
-      <div class="mt-3 flex flex-wrap items-center gap-1.5" aria-label="Filter by status">
-        <button
-          v-for="option in statusOptions"
-          :key="option.value"
-          type="button"
-          class="rounded-full border px-2.5 py-1 text-[11px] transition-colors"
-          :class="
-            store.allReposFilters.statuses.includes(option.value)
-              ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
-              : 'border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200'
-          "
-          :aria-pressed="store.allReposFilters.statuses.includes(option.value)"
-          @click="store.toggleAllReposStatus(option.value)"
-        >
-          {{ option.label }}
-          <span class="ml-1 font-mono text-[10px] text-slate-500">
-            {{ store.allReposStatusCounts[option.value] }}
-          </span>
-        </button>
+      <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        <TdSegmentedControl
+          v-model="statusFilter"
+          :options="statusOptionsWithCounts"
+          aria-label="Filter by status"
+        />
 
-        <button
+        <TdButton
           v-if="hasFilters"
-          type="button"
-          class="ml-1 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-200"
+          variant="ghost"
+          size="sm"
+          class="ml-1"
           @click="store.clearAllReposFilters"
         >
-          <SlidersHorizontal class="h-3 w-3" />
+          <template #icon-left><SlidersHorizontal /></template>
           Clear filters
-        </button>
+        </TdButton>
       </div>
     </header>
 
-    <div class="flex items-center justify-between border-b border-slate-800/70 px-4 py-2">
-      <span class="font-mono text-[11px] text-slate-500">
+    <div class="flex items-center justify-between border-b border-border px-4 py-2">
+      <span class="font-mono text-[11px] text-fg-muted">
         {{ store.allReposFiltered.length }} of {{ store.repositories.length }} repos
       </span>
     </div>
@@ -140,28 +150,22 @@ const hasFilters = computed(() => {
 
     <div v-else class="flex flex-1 flex-col items-center justify-center px-6 text-center">
       <template v-if="store.repositories.length === 0">
-        <h2 class="text-base font-semibold text-slate-100">No projects yet</h2>
-        <p class="mt-1.5 max-w-md text-sm text-slate-400">
+        <h2 class="text-base font-semibold text-fg">No projects yet</h2>
+        <p class="mt-1.5 max-w-md text-sm text-fg-muted">
           Find the folder where your projects live. We will add every Git project inside it.
         </p>
-        <button
-          class="mt-4 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950"
-          @click="store.openAddScanPath"
-        >
+        <TdButton class="mt-4" variant="primary" @click="store.openAddScanPath">
           Add project folder
-        </button>
+        </TdButton>
       </template>
       <template v-else>
-        <h2 class="text-base font-semibold text-slate-100">No repos match</h2>
-        <p class="mt-1.5 text-sm text-slate-400">
+        <h2 class="text-base font-semibold text-fg">No repos match</h2>
+        <p class="mt-1.5 text-sm text-fg-muted">
           Try another filter or clear everything to see all projects.
         </p>
-        <button
-          class="mt-4 rounded-lg px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
-          @click="store.clearAllReposFilters"
-        >
+        <TdButton class="mt-4" variant="ghost" @click="store.clearAllReposFilters">
           Clear filters
-        </button>
+        </TdButton>
       </template>
     </div>
   </section>

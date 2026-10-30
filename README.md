@@ -84,9 +84,17 @@ pnpm build              # type-check and build dist/
 ## Design system
 
 The Vue UI uses the shared TopData design system from
-`../topdata-design-system`: `@topdata-software-gmbh/ui` for components and
+`../topdata-design-system`: `@topdata-software-gmbh/ui-kit-web-vue3` for components and
 `@topdata-software-gmbh/design-tokens` for the generated `--td-*` CSS variables.
 `src/main.ts` imports the token CSS and the kit styles before the app stylesheet.
+
+Every screen uses kit components (`TdButton`, `TdInput`, `TdFormField`, `TdSelect`,
+`TdTextarea`, `TdCheckbox`, `TdBadge`, `TdAlert`, `TdSpinner`, `TdMenu`,
+`TdSegmentedControl`, `TdModal`, `TdToastStack`) plus Tailwind utilities backed by
+the token preset. App templates and helpers must not use raw palette classes
+(`slate-*`, `cyan-*`, `rose-*`, …) or hard-coded hex colours; `src/lib/__tests__/token-only.test.ts`
+enforces this. Group colours are stored as semantic token names, with a legacy hex
+fallback for existing config files.
 
 This checkout currently links both packages from the sibling working tree. Build
 them once before starting the app:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, watch } from 'vue';
-import { TdToastStack } from '@topdata-software-gmbh/ui';
+import { TdToastStack } from '@topdata-software-gmbh/ui-kit-web-vue3';
 import { useRepoStore } from '../stores/repoStore';
 
 const store = useRepoStore();

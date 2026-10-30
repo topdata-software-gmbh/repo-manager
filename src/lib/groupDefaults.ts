@@ -1,13 +1,24 @@
 import type { RepoGroup } from '../types/domain';
 
-export const GROUP_COLORS = [
-  '#38bdf8',
-  '#22c55e',
-  '#f59e0b',
-  '#f43f5e',
-  '#a855f7',
-  '#14b8a6',
+export const GROUP_COLOR_TOKENS = [
+  'primary',
+  'accent',
+  'success',
+  'warning',
+  'error',
+  'info',
 ] as const;
+
+export type GroupColorToken = (typeof GROUP_COLOR_TOKENS)[number];
+
+export const GROUP_COLORS = GROUP_COLOR_TOKENS;
+
+export function groupColorStyle(color: string): Record<string, string> {
+  if (color.startsWith('#')) {
+    return { backgroundColor: color };
+  }
+  return { backgroundColor: `var(--td-color-${color})` };
+}
 
 export function createGroup(
   name: string,

@@ -16,11 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row-level actions.
 - Repository kind detection for themes, plugins, and other repositories.
 - `save_onboarding_state` Tauri command and `POST /api/onboarding` endpoint.
-- Shared `@topdata-software-gmbh/ui` and `@topdata-software-gmbh/design-tokens`
-  dependencies, token/kit CSS imports, and a Vitest migration smoke test.
+- Shared `@topdata-software-gmbh/ui-kit-web-vue3` and
+  `@topdata-software-gmbh/design-tokens` dependencies, token/kit CSS imports, and
+  a Vitest migration smoke test.
 
 ### Changed
 
+- Migrated every screen, modal, onboarding step, table, and helper to the shared
+  web UI kit and token-backed utilities. The app no longer ships a second
+  (slate/cyan) palette.
+- Added `TdSelect`, `TdTextarea`, `TdCheckbox`, `TdBadge`, `TdAlert`,
+  `TdSpinner`, `TdMenu`, `TdMenuItem`, and `TdSegmentedControl` usage across the
+  toolbar, filters, forms, empty states, and guidance banner.
+- Group colours are now stored as semantic token names; existing hex values keep
+  rendering through a legacy fallback.
 - The sidebar's "All projects" entry is now "All repos" and opens a dedicated
   browse page; group workspaces keep the bulk action toolbar.
 - `AddScanPathModal` and `ToastStack` now use the shared design-system
