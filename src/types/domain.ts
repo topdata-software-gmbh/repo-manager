@@ -97,3 +97,40 @@ export interface OperationProgressEvent {
   status: 'pending' | 'running' | 'success' | 'failed';
   message?: string;
 }
+
+export type GitStepStatus = 'running' | 'ok' | 'failed' | 'skipped';
+
+export interface GitStepEvent {
+  runId: string;
+  repoPath: string;
+  macroId: string;
+  title: string;
+  stepIndex: number;
+  comment: string;
+  command: string;
+  status: GitStepStatus;
+  durationMs: number;
+  message: string | null;
+  alias: string | null;
+}
+
+export interface GitLogRow {
+  key: string;
+  stepIndex: number;
+  comment: string;
+  command: string;
+  alias: string | null;
+  status: GitStepStatus;
+  repoPaths: string[];
+  message: string | null;
+}
+
+export interface GitRun {
+  runId: string;
+  title: string;
+  macroId: string;
+  status: GitStepStatus;
+  durationMs: number;
+  rows: GitLogRow[];
+  finishedAt: string;
+}

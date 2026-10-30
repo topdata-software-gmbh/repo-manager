@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Save,
+  Terminal,
   Upload,
 } from 'lucide-vue-next';
 import {
@@ -233,6 +234,11 @@ async function runAction(
           <template #icon><ArchiveRestore /></template>
           Bring back set-aside changes
           <template #description>Restore the last set of changes in all projects.</template>
+        </TdMenuItem>
+        <TdMenuItem @select="store.openGitLog()">
+          <template #icon><Terminal /></template>
+          What Git did
+          <template #description>See the exact commands behind the last actions.</template>
         </TdMenuItem>
       </TdMenu>
 

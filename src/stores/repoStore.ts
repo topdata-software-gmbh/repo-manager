@@ -19,6 +19,7 @@ import {
 import type {
   AppConfig,
   BranchInfo,
+  GitStepEvent,
   GroupingStyle,
   OnboardingState,
   OperationResult,
@@ -48,6 +49,8 @@ export interface GroupInsight {
 
 let nextToastId = 0;
 let branchRequestId = 0;
+
+const GIT_STEP_LIMIT = 200;
 
 const ACTION_LABELS: Record<
   'fetch' | 'pull' | 'push' | 'stash' | 'stash_pop',
@@ -96,6 +99,8 @@ export const useRepoStore = defineStore('repo', () => {
   const onboardingGroups = ref<Array<SuggestedGroup & { included: boolean }>>([]);
   const onboardingPendingGroups = ref<RepoGroup[]>([]);
   const allReposFilters = ref<AllReposFilters>(emptyAllReposFilters());
+  const gitSteps = ref<GitStepEvent[]>([]);
+  const gitLogOpen = ref(false);
 
   const currentGroup = computed(() => {
     if (selectedGroupId.value === 'all') return null;
@@ -299,6 +304,27 @@ export const useRepoStore = defineStore('repo', () => {
 
   function dismissToast(id: number): void {
     toasts.value = toasts.value.filter((toast) => toast.id !== id);
+  }
+
+  function recordGitStep(step: GitStepEvent): void {
+    gitSteps.value = [...gitSteps.value, step];
+    while (gitSteps.value.length > GIT_STEP_LIMIT) {
+      const oldestRun = gitSteps.value[0].runId;
+      const next = gitSteps.value.filter((entry) => entry.runId !== oldestRun);
+      if (next.length === gitSteps.value.length) {
+        gitSteps.value = gitSteps.value.slice(-50);
+        break;
+      }
+      gitSteps.value = next;
+    }
+  }
+
+  function openGitLog(): void {
+    gitLogOpen.value = true;
+  }
+
+  function closeGitLog(): void {
+    gitLogOpen.value = false;
   }
 
   function repoLabel(path: string): string {
@@ -842,6 +868,8 @@ export const useRepoStore = defineStore('repo', () => {
     helpModalOpen,
     groupEditorOpen,
     editingGroup,
+    gitSteps,
+    gitLogOpen,
     initialize,
     loadConfig,
     scanRepositories,
@@ -881,5 +909,8 @@ export const useRepoStore = defineStore('repo', () => {
     closeGroupEditor,
     showToast,
     dismissToast,
+    recordGitStep,
+    openGitLog,
+    closeGitLog,
   };
 });

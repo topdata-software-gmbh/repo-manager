@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
-import { subscribeToRepoChanges } from './lib/backend';
+import { subscribeToEvents } from './lib/backend';
 import { useRepoStore } from './stores/repoStore';
 import AllReposPage from './components/AllReposPage.vue';
 import AddScanPathModal from './components/AddScanPathModal.vue';
+import GitLogDrawer from './components/GitLogDrawer.vue';
 import GroupEditorModal from './components/GroupEditorModal.vue';
 import GuidanceBanner from './components/GuidanceBanner.vue';
 import HelpModal from './components/HelpModal.vue';
@@ -21,11 +22,12 @@ onMounted(async () => {
   await store.initialize();
 
   try {
-    unsubscribe = await subscribeToRepoChanges((path) => {
-      void store.refreshSingleRepo(path);
+    unsubscribe = await subscribeToEvents({
+      onRepoChanged: (path) => void store.refreshSingleRepo(path),
+      onGitStep: (step) => store.recordGitStep(step),
     });
   } catch (error) {
-    store.showToast('error', 'Live file watching unavailable', String(error));
+    store.showToast('error', 'Live updates unavailable', String(error));
   }
 });
 
@@ -50,6 +52,7 @@ onUnmounted(() => unsubscribe?.());
       <AddScanPathModal />
       <SaveChangesModal />
       <HelpModal />
+      <GitLogDrawer />
     </template>
     <ToastStack />
   </div>

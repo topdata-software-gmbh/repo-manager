@@ -2,6 +2,7 @@ import type {
   AppConfig,
   BranchInfo,
   FileChange,
+  GitStepEvent,
   OnboardingState,
   OperationResult,
   RepoGroup,
@@ -215,12 +216,19 @@ export const backend = {
   },
 };
 
-export async function subscribeToRepoChanges(
-  callback: (path: string) => void,
-): Promise<() => void> {
+export interface AppEventHandlers {
+  onRepoChanged?: (path: string) => void;
+  onGitStep?: (step: GitStepEvent) => void;
+}
+
+export async function subscribeToEvents(handlers: AppEventHandlers): Promise<() => void> {
   if (isTauri) {
     const { listen } = await import('@tauri-apps/api/event');
-    return listen<string>('repo:fs-changed', (event) => callback(event.payload));
+    const unlisten = await Promise.all([
+      listen<string>('repo:fs-changed', (event) => handlers.onRepoChanged?.(event.payload)),
+      listen<GitStepEvent>('git:step', (event) => handlers.onGitStep?.(event.payload)),
+    ]);
+    return () => unlisten.forEach((stop) => stop());
   }
 
   const token = getWebToken();
@@ -228,8 +236,18 @@ export async function subscribeToRepoChanges(
   if (token) url.searchParams.set('token', token);
 
   const source = new EventSource(url);
-  const handler = (event: Event) => callback((event as MessageEvent<string>).data);
-  source.addEventListener('repo-fs-changed', handler as EventListener);
+  const repoHandler = (event: Event) => {
+    handlers.onRepoChanged?.((event as MessageEvent<string>).data);
+  };
+  const stepHandler = (event: Event) => {
+    try {
+      handlers.onGitStep?.(JSON.parse((event as MessageEvent<string>).data) as GitStepEvent);
+    } catch {
+      // A malformed frame must never break the live view.
+    }
+  };
+  source.addEventListener('repo-fs-changed', repoHandler as EventListener);
+  source.addEventListener('git-step', stepHandler as EventListener);
 
   return () => source.close();
 }
