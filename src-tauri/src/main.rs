@@ -25,6 +25,7 @@ struct Cli {
     token: Option<String>,
     config: Option<PathBuf>,
     dist: Option<PathBuf>,
+    accelerated: bool,
     help: bool,
 }
 
@@ -62,6 +63,18 @@ fn main() {
 }
 
 fn run_desktop(cli: Cli) {
+    // WebKitGTK negotiates GBM buffer modifiers through Mesa for its DMA-BUF
+    // renderer; the NVIDIA proprietary driver rejects them, so allocation
+    // fails with `Failed to create GBM buffer ...: Invalid argument` and the
+    // window stays blank. Same mitigation as docdeck: switch the path off by
+    // default, but let an explicit export or --accelerated opt back in.
+    // Must run before the first window exists - WebKitGTK latches these
+    // settings while it initialises.
+    #[cfg(target_os = "linux")]
+    if !cli.accelerated && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let config_manager = match cli.config {
         Some(path) => ConfigManager::from_path(path),
         None => ConfigManager::init(),
@@ -120,6 +133,7 @@ fn parse_cli() -> Result<Cli, String> {
         dist: std::env::var("GIT_REPO_MANAGER_DIST")
             .ok()
             .map(PathBuf::from),
+        accelerated: false,
         help: false,
     };
 
@@ -127,6 +141,7 @@ fn parse_cli() -> Result<Cli, String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--web" => cli.web = true,
+            "--accelerated" => cli.accelerated = true,
             "--help" | "-h" => cli.help = true,
             "--host" => cli.host = args.next().ok_or("--host requires a value")?,
             "--port" => {
@@ -192,6 +207,7 @@ Options:
   --token <TOKEN>       Require this access token in web mode
   --config <PATH>       Use a custom config.json location
   --dist <PATH>         Frontend build directory for web mode (default: dist)
+  --accelerated         Keep WebKitGTK's DMA-BUF renderer (default: disabled)
   -h, --help            Print this help
 
 Environment variables:
