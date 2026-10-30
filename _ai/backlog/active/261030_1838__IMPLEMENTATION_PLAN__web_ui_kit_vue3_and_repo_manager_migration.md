@@ -2,12 +2,12 @@
 filename: "_ai/backlog/active/261030_1838__IMPLEMENTATION_PLAN__web_ui_kit_vue3_and_repo_manager_migration.md"
 title: "Web UI Kit Vue 3 and Repo Manager Migration"
 createdAt: 2026-10-30 18:38
-updatedAt: 2026-10-30 18:38
+updatedAt: 2026-10-30 19:51
 status: draft
 priority: high
 tags: [ui-kit, vue3, design-system, tokens, tailwind, repo-manager, migration, accessibility]
 estimatedComplexity: complex
-documentRevision: 1
+documentRevision: 2
 sourceSpec: ""
 sourceHandoff: ""
 sourceAdrs:
@@ -195,6 +195,11 @@ remove `:deep(...)` wrappers (`.td-button__icon :deep(svg)` becomes
 
 [NEW FILE] `packages/ui-kit-web-vue3/src/styles/components/button.css`
 
+The file below is the **complete** contents of the current `TdButton.vue`
+`<style scoped>` block, with `:deep(...)` removed. Do not stop at the first
+visible rules: the `:active` states, spinner, keyframes, and reduced-motion
+block are required by `TdButton.test.ts`.
+
 ```css
 .td-button {
   display: inline-flex;
@@ -238,6 +243,10 @@ remove `:deep(...)` wrappers (`.td-button__icon :deep(svg)` becomes
   background-color: var(--td-color-primary-hover);
 }
 
+.td-button--primary:active:not(:disabled) {
+  background-color: var(--td-color-primary-active);
+}
+
 .td-button--secondary {
   background-color: var(--td-color-surface-raised);
   border-color: var(--td-color-border);
@@ -247,6 +256,10 @@ remove `:deep(...)` wrappers (`.td-button__icon :deep(svg)` becomes
 .td-button--secondary:hover:not(:disabled) {
   background-color: var(--td-color-surface-hover);
   border-color: var(--td-color-border-strong);
+}
+
+.td-button--secondary:active:not(:disabled) {
+  background-color: var(--td-color-surface-hover);
 }
 
 .td-button--ghost {
@@ -259,9 +272,21 @@ remove `:deep(...)` wrappers (`.td-button__icon :deep(svg)` becomes
   color: var(--td-color-fg);
 }
 
+.td-button--ghost:active:not(:disabled) {
+  background-color: var(--td-color-surface-hover);
+}
+
 .td-button--danger {
   background-color: var(--td-color-error);
   color: var(--td-color-on-error);
+}
+
+.td-button--danger:hover:not(:disabled) {
+  background-color: var(--td-color-error-hover);
+}
+
+.td-button--danger:active:not(:disabled) {
+  background-color: var(--td-color-error-hover);
 }
 
 .td-button:disabled {
@@ -298,8 +323,33 @@ remove `:deep(...)` wrappers (`.td-button__icon :deep(svg)` becomes
 }
 
 .td-button__icon svg {
-  width: 100%;
-  height: 100%;
+  width: 1em;
+  height: 1em;
+}
+
+.td-button__spinner {
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--td-radius-full);
+  animation: td-button-spin 700ms linear infinite;
+}
+
+@keyframes td-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .td-button {
+    transition: none;
+  }
+
+  .td-button__spinner {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
 }
 
 .td-button--icon-only.td-button--sm {
@@ -397,10 +447,20 @@ Keep the default inset dialog unchanged:
        >
 ```
 
-[NEW FILE] `packages/ui-kit-web-vue3/src/styles/components/modal.css`
+[APPEND TO] `packages/ui-kit-web-vue3/src/styles/components/modal.css`
+
+`modal.css` was already created in step 2 by moving the complete `TdModal.vue`
+`<style scoped>` block. **Append** the flush rules below; do not overwrite the
+moved base rules (`.td-modal`, `.td-modal__dialog`, `.td-modal__body`, media
+queries), or `TdModal.test.ts`/the modal visuals break.
 
 ```css
+/* Append after the moved TdModal rules. */
 .td-modal--flush {
+  padding: 0;
+}
+
+.td-modal--flush .td-modal__body {
   padding: 0;
 }
 
@@ -913,6 +973,7 @@ const props = withDefaults(
     id?: string;
     label?: string;
     description?: string;
+    ariaLabel?: string;
     disabled?: boolean;
     invalid?: boolean;
   }>(),
@@ -946,6 +1007,7 @@ function onChange(event: Event): void {
       type="checkbox"
       :checked="props.modelValue"
       :disabled="props.disabled"
+      :aria-label="props.ariaLabel"
       :aria-invalid="props.invalid || undefined"
       :aria-describedby="props.description ? descriptionId : undefined"
       @change="onChange"
@@ -1878,8 +1940,11 @@ export default {
 [MODIFY] `index.html`
 
 ```html
+<!doctype html>
 <html lang="en" data-theme="dark">
   <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
     <title>Git Repo Manager</title>
   </head>
@@ -2147,10 +2212,9 @@ Replace the fixed overlay + custom form shell with `TdModal`:
 ```vue
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Layers, Trash2 } from 'lucide-vue-next';
+import { Trash2 } from 'lucide-vue-next';
 import {
   TdAlert,
-  TdBadge,
   TdButton,
   TdCheckbox,
   TdFormField,
@@ -2410,6 +2474,11 @@ modal if time permits.
 
 [MODIFY] `src/components/SaveChangesModal.vue`
 
+Merge the imports and `statusVariant` below into the **existing** script setup.
+Do not replace the script: `store`, `repos`, `changes`, `message`, `loading`,
+`saving`, `error`, `totalFiles`, `canSave`, `watch`, `loadChanges`,
+`statusLabel`, and `save` stay unchanged.
+
 ```vue
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
@@ -2426,6 +2495,10 @@ import {
 import { backend } from '../lib/backend';
 import { useRepoStore } from '../stores/repoStore';
 import type { FileChange, FileChangeStatus, Repository } from '../types/domain';
+
+// ... existing `store`, `repos`, `changes`, `message`, `loading`, `saving`,
+// `error`, `totalFiles`, `canSave`, `watch`, `loadChanges`, `statusLabel`, and
+// `save` stay here unchanged ...
 
 type ChangeVariant = 'success' | 'error' | 'info' | 'warning' | 'neutral';
 
@@ -2619,6 +2692,11 @@ no palette classes remain in them.
   `bg-surface-raised font-semibold text-primary` and
   `text-fg-muted hover:bg-surface hover:text-fg`.
 - Replace scan path text classes with `text-fg-muted` / `text-fg-dim`.
+- Replace **every** remaining native `<button>` with `TdButton`: the group row
+  selector, the two header add buttons, the scan-path row toggle/remove
+  buttons, and the three bottom actions (`Look for new projects`, `Setup`,
+  `Add project folder`). The phase exit criterion is no native `<button>` in
+  this file.
 
 Example nav item:
 
@@ -2704,13 +2782,22 @@ const branchOptions = computed(() => [
 </TdMenu>
 ```
 
-Remove `moreOpen`, `moreRef`, and the outside-click listeners from the script.
+Remove `moreOpen`, `moreRef`, `handleOutsideClick`, and the
+`onMounted`/`onUnmounted` listeners from the script. Also remove the
+`moreOpen.value = false;` line inside `runAction`, and the now-unused
+`onMounted`/`onUnmounted` and `Loader2` imports. Do the same `Loader2` import
+cleanup in `Sidebar.vue` and `RepoListTable.vue` after replacing it with
+`TdSpinner`; `noUnusedLocals` is enabled, so a leftover symbol fails
+`pnpm typecheck`.
 
 ### RepoListTable
 
 - Replace status badge `<span>` with `TdBadge :variant="badge.variant"`.
 - Replace icon buttons with `TdButton variant="ghost" size="sm"` and
   `aria-label`.
+- Replace the labelled `Save`/`Review` button with `TdButton variant="ghost"
+  size="sm"`; it is a native `<button>` in the actions cell even though it is
+  not icon-only.
 - Replace `Loader2` with `TdSpinner size="sm"`.
 - Replace table header/row classes with tokens:
   `border-border bg-surface text-fg-muted`, `hover:bg-surface-hover`,
@@ -2733,7 +2820,11 @@ Example:
 
 ### RepoTable
 
-- Replace the empty-state button with `TdButton variant="primary"`.
+- Replace the search `<input>` with `TdInput` + a `#prefix` Search icon and
+  `aria-label="Search projects"`.
+- Replace every empty-state `<button>` (`Add project folder`, `How this works`,
+  `Edit group`, `Scan again`, `Add project folder`, `Clear search`) with
+  `TdButton` (`primary` for the add actions, `secondary`/`ghost` for the rest).
 - Replace raw palette classes with tokens.
 - Keep `RepoListTable` as the table renderer.
 
@@ -2742,6 +2833,8 @@ Example:
 - Replace the search `<input>` with `TdInput` and a `#prefix` Search icon.
 - Replace the two `<select>` controls with `TdFormField` + `TdSelect`.
 - Replace status filter `<button>` loop with `TdSegmentedControl`.
+- Replace the header `Add project folder` and `Clear filters` buttons with
+  `TdButton` (`secondary` for add, `ghost` for clear).
 - Replace empty-state buttons with `TdButton`.
 - Replace all palette classes with tokens.
 
@@ -2875,7 +2968,7 @@ const currentLabel = computed(() => steps[store.onboardingStep] ?? steps[0]);
             <p class="text-xs font-semibold uppercase tracking-widest text-primary">
               Step {{ store.onboardingStep + 1 }} of 4 · {{ currentLabel }}
             </p>
-            <h1 id="onboarding-title" ref="heading" tabindex="-1" class="mt-1 text-xl font-semibold text-fg outline-none">
+            <h1 id="onboarding-title" ref="heading" tabindex="-1" data-autofocus class="mt-1 text-xl font-semibold text-fg outline-none">
               Let's set up your workspace
             </h1>
           </div>
@@ -2909,9 +3002,11 @@ const currentLabel = computed(() => steps[store.onboardingStep] ?? steps[0]);
 ```
 
 `TdModal` handles Escape, focus trap, and scroll lock. Remove the manual
-`onKeydown` listener and `onMounted` focus; focus the heading via `TdModal`'s
-focus trap or an explicit `nextTick` in the wizard if the heading is the first
-focusable element.
+`onKeydown` listener and `onMounted` focus. `useFocusTrap` excludes
+`[tabindex='-1']`, so the heading is not part of the normal focus order; the
+`data-autofocus` attribute above makes the trap prefer it. If you prefer not to
+use `data-autofocus`, keep an explicit
+`nextTick(() => heading.value?.focus())` in the wizard instead.
 
 ### OnboardingStepFind
 
